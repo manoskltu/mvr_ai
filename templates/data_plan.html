@@ -1,0 +1,31 @@
+{% extends "base.html" %}
+
+{% block title %}Plan — FS Mide Offer Tool{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Plan</h1>
+
+    <section class="plan-section">
+        {% if records %}
+            {% for record in records %}
+            <div class="import-card">
+                <h3>{{ record.subject or '(inget ämne)' }}</h3>
+                <p class="text-muted">{{ record.date.strftime('%Y-%m-%d %H:%M') if record.date else '—' }} — {{ record.sender }}</p>
+                <ul class="attachment-list">
+                    {% for att in record.attachments %}
+                        {% if att.filename.lower().endswith('.pdf') %}
+                        <li>
+                            <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}">{{ att.filename }}</a>
+                        </li>
+                        {% endif %}
+                    {% endfor %}
+                </ul>
+            </div>
+            {% endfor %}
+        {% else %}
+        <p class="text-muted no-data-message">Inga e-postmeddelanden med PDF-bilagor hittades.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

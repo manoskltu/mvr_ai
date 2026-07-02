@@ -12,7 +12,6 @@
     <nav class="sub-nav">
         <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
         <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
-        <a href="{{ url_for('data.analys_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'analys' }}">Analys</a>
     </nav>
 
     <div class="record-detail">
@@ -53,6 +52,7 @@
                                 {% if att.id and analysis_status and analysis_status.get(att.id) %}
                                 <span class="badge badge-{{ analysis_status[att.id] }}">{{ analysis_status[att.id] }}</span>
                                 {% endif %}
+                                <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-secondary" style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.8rem;">Plan</a>
                                 {% else %}
                                 {% if att.file_path and att.id %}
                                 <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>

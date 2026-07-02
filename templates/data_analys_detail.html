@@ -8,6 +8,14 @@
 
     <h1>Analysresultat</h1>
 
+    <!-- Sub-navigation -->
+    <nav class="sub-nav">
+        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
+        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
+        <a href="{{ url_for('data.analys_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'analys' }}">Analys</a>
+        <a href="{{ url_for('data.plan_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'plan' }}">Plan</a>
+    </nav>
+
     <!-- Source info -->
     <div class="analys-meta">
         <p><strong>PDF:</strong> {{ analysis.attachment.filename }}</p>

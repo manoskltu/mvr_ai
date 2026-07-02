@@ -365,3 +365,86 @@ ol, ul {
     color: #6c757d;
     margin-top: -0.25rem;
 }
+
+
+/* --- Plan Editor Styles --- */
+
+.plan-toolbar {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 0;
+    flex-wrap: wrap;
+}
+
+.plan-toolbar .btn.active {
+    background: #2c3e50;
+    color: #fff;
+}
+
+.plan-editor-container {
+    position: relative;
+    max-width: 100%;
+    margin-top: 1rem;
+}
+
+.plan-editor-container img {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.plan-editor-container canvas {
+    position: absolute;
+    top: 0;
+    left: 0;
+}
+
+.plan-page-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    margin-left: auto;
+}
+
+.plan-page-nav button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
+.plan-page-nav span {
+    font-size: 0.9rem;
+    color: #495057;
+    min-width: 6rem;
+    text-align: center;
+}
+
+.error-toast {
+    position: fixed;
+    top: 1.5rem;
+    right: 1.5rem;
+    z-index: 9999;
+    background: #e74c3c;
+    color: #fff;
+    padding: 0.75rem 1.25rem;
+    border-radius: 4px;
+    font-size: 0.9rem;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+    animation: toast-in 0.3s ease;
+}
+
+.error-toast-fade {
+    opacity: 0;
+    transition: opacity 0.3s ease;
+}
+
+@keyframes toast-in {
+    from {
+        opacity: 0;
+        transform: translateY(-10px);
+    }
+    to {
+        opacity: 1;
+        transform: translateY(0);
+    }
+}

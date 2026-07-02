@@ -114,10 +114,12 @@ def run_analysis(attachment_id: int, file_path: str, config: dict) -> AnalysisRe
                     from analysis.vision_client import analyze_page_with_vision
                     vision_model = config.get("vision_model", "llama3.2-vision")
                     vision_base_url = config.get("vision_base_url")
+                    vision_timeout = config.get("vision_timeout", 300)
                     vision_profiles = analyze_page_with_vision(
                         page_image,
                         model=vision_model,
                         base_url=vision_base_url,
+                        timeout=vision_timeout,
                     )
                     # Set page number on vision results
                     for vp in vision_profiles:

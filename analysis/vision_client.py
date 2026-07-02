@@ -51,7 +51,7 @@ def analyze_page_with_vision(
     image: Image.Image,
     model: str = "llama3.2-vision",
     base_url: str | None = None,
-    timeout: int = 120,
+    timeout: int = 300,
 ) -> list[ProfileMatch]:
     """Send a page image to Ollama for vision analysis.
 
@@ -59,7 +59,7 @@ def analyze_page_with_vision(
         image: PIL Image of the rendered PDF page.
         model: Ollama model name (default: llama3.2-vision).
         base_url: Ollama API base URL (default: http://localhost:11434).
-        timeout: Request timeout in seconds.
+        timeout: Request timeout in seconds (default: 300 for local models).
 
     Returns:
         List of ProfileMatch objects extracted by the vision model.
@@ -68,9 +68,12 @@ def analyze_page_with_vision(
     url = (base_url or DEFAULT_OLLAMA_URL).rstrip("/")
     endpoint = f"{url}/api/chat"
 
+    # Resize image to reduce processing time (max 1024px on longest side)
+    image = _resize_for_vision(image, max_size=1024)
+
     # Convert image to base64
     buffer = io.BytesIO()
-    image.save(buffer, format="PNG")
+    image.save(buffer, format="PNG", optimize=True)
     image_b64 = base64.b64encode(buffer.getvalue()).decode("utf-8")
 
     # Build request payload
@@ -198,3 +201,23 @@ def _parse_dims_string(profile_type: str, dims_str: str) -> dict:
         return {"thickness": int(parts[0])}
     else:
         return {}
+
+
+def _resize_for_vision(image: Image.Image, max_size: int = 1024) -> Image.Image:
+    """Resize image so longest side is at most max_size pixels.
+
+    This significantly speeds up local vision model inference without
+    losing too much detail for text/profile recognition.
+    """
+    w, h = image.size
+    if w <= max_size and h <= max_size:
+        return image
+
+    if w > h:
+        new_w = max_size
+        new_h = int(h * (max_size / w))
+    else:
+        new_h = max_size
+        new_w = int(w * (max_size / h))
+
+    return image.resize((new_w, new_h), Image.Resampling.LANCZOS)

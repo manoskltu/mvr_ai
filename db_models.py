@@ -47,6 +47,31 @@ class AttachmentModel(db.Model):
     file_path = db.Column(db.Text, nullable=False, default="")
 
 
+class AnnotationModel(db.Model):
+    """Stores rectangle annotations for PDF pages."""
+
+    __tablename__ = "annotations"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    attachment_id = db.Column(
+        db.Integer,
+        db.ForeignKey("attachments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    page_number = db.Column(db.Integer, nullable=False)  # 1-indexed
+    x = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
+    y = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
+    width = db.Column(db.Float, nullable=False)   # ratio 0.0–1.0
+    height = db.Column(db.Float, nullable=False)  # ratio 0.0–1.0
+    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+
+    attachment = db.relationship("AttachmentModel", backref="annotations")
+
+    __table_args__ = (
+        db.Index("ix_annotations_attachment_page", "attachment_id", "page_number"),
+    )
+
+
 class AnalysisResultModel(db.Model):
     """Stores analysis results for a single PDF attachment."""
 

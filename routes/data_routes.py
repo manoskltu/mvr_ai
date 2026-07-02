@@ -12,6 +12,7 @@ from flask import (
     abort,
     current_app,
     flash,
+    jsonify,
     redirect,
     render_template,
     request,
@@ -22,12 +23,37 @@ from flask import (
 import data_store
 import import_handler
 from attachment_store import get_attachment_full_path
-from db_models import AnalysisResultModel, AttachmentModel, EmailRecordModel, db
+from db_models import AnalysisResultModel, AnnotationModel, AttachmentModel, EmailRecordModel, db
 from models import EmailRecord
 from analysis.analysis_pipeline import run_analysis, serialize_result, deserialize_result
 from analysis.config import get_analysis_config
 
 data_bp = Blueprint("data", __name__, url_prefix="/data")
+
+
+def validate_annotation_data(data):
+    """Validate annotation request body.
+
+    Returns (validated_data, None) on success or (None, error_message) on failure.
+    """
+    required = ["attachment_id", "page_number", "x", "y", "width", "height"]
+    for field in required:
+        if field not in data:
+            return None, f"Missing required field: {field}"
+    try:
+        x = float(data["x"])
+        y = float(data["y"])
+        w = float(data["width"])
+        h = float(data["height"])
+        page = int(data["page_number"])
+        att_id = int(data["attachment_id"])
+    except (ValueError, TypeError):
+        return None, "Invalid field types"
+    if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0 and 0.0 <= w <= 1.0 and 0.0 <= h <= 1.0):
+        return None, "Coordinate values must be between 0.0 and 1.0"
+    if page < 1:
+        return None, "page_number must be >= 1"
+    return {"attachment_id": att_id, "page_number": page, "x": x, "y": y, "width": w, "height": h}, None
 
 
 @data_bp.route("/")
@@ -345,3 +371,199 @@ def rerun_analysis(analysis_id):
 
     flash("Analysen har körts om.", "success")
     return redirect(url_for("data.analys_detail", analysis_id=analysis_id))
+
+
+# --- Page Image API (Task 2.1) ---
+
+@data_bp.route("/api/page-image/<int:attachment_id>/<int:page_number>")
+def page_image(attachment_id, page_number):
+    """Serve a rendered PDF page as PNG with X-Page-Count header."""
+    import io
+
+    import fitz
+
+    from analysis.page_renderer import render_page
+
+    att = db.session.get(AttachmentModel, attachment_id)
+    if not att or not att.file_path:
+        abort(404)
+
+    full_path = get_attachment_full_path(att.file_path, current_app.instance_path)
+    if not os.path.isfile(full_path):
+        abort(404)
+
+    # Get total pages
+    try:
+        doc = fitz.open(full_path)
+        total_pages = len(doc)
+        doc.close()
+    except Exception:
+        abort(404)
+
+    if page_number < 1 or page_number > total_pages:
+        abort(404)
+
+    image = render_page(full_path, page_number, dpi=150)
+    if image is None:
+        abort(404)
+
+    buffer = io.BytesIO()
+    image.save(buffer, format="PNG")
+    buffer.seek(0)
+    response = send_file(buffer, mimetype="image/png")
+    response.headers["X-Page-Count"] = str(total_pages)
+    return response
+
+
+# --- Annotations CRUD API (Tasks 3.1-3.4) ---
+
+@data_bp.route("/api/annotations/<int:attachment_id>/<int:page_number>")
+def get_annotations(attachment_id, page_number):
+    """Get annotations for a specific attachment page as JSON array."""
+    annotations = AnnotationModel.query.filter_by(
+        attachment_id=attachment_id, page_number=page_number
+    ).all()
+    result = []
+    for ann in annotations:
+        result.append({
+            "id": ann.id,
+            "attachment_id": ann.attachment_id,
+            "page_number": ann.page_number,
+            "x": ann.x,
+            "y": ann.y,
+            "width": ann.width,
+            "height": ann.height,
+            "created_at": ann.created_at.isoformat() if ann.created_at else None,
+        })
+    return jsonify(result)
+
+
+@data_bp.route("/api/annotations", methods=["POST"])
+def create_annotation():
+    """Create a new annotation. Returns 201 with created annotation."""
+    data = request.get_json(force=True)
+    validated, error = validate_annotation_data(data)
+    if error:
+        return jsonify({"error": error}), 400
+
+    # Verify attachment exists
+    att = db.session.get(AttachmentModel, validated["attachment_id"])
+    if att is None:
+        abort(404)
+
+    ann = AnnotationModel(
+        attachment_id=validated["attachment_id"],
+        page_number=validated["page_number"],
+        x=validated["x"],
+        y=validated["y"],
+        width=validated["width"],
+        height=validated["height"],
+    )
+    db.session.add(ann)
+    db.session.commit()
+
+    return jsonify({
+        "id": ann.id,
+        "attachment_id": ann.attachment_id,
+        "page_number": ann.page_number,
+        "x": ann.x,
+        "y": ann.y,
+        "width": ann.width,
+        "height": ann.height,
+        "created_at": ann.created_at.isoformat() if ann.created_at else None,
+    }), 201
+
+
+@data_bp.route("/api/annotations/<int:annotation_id>", methods=["PUT"])
+def update_annotation(annotation_id):
+    """Update an annotation's position/size. Returns 200 with updated annotation."""
+    ann = db.session.get(AnnotationModel, annotation_id)
+    if ann is None:
+        abort(404)
+
+    data = request.get_json(force=True)
+
+    # Validate coordinate fields if present
+    for field in ["x", "y", "width", "height"]:
+        if field in data:
+            try:
+                val = float(data[field])
+            except (ValueError, TypeError):
+                return jsonify({"error": f"Invalid value for {field}"}), 400
+            if not (0.0 <= val <= 1.0):
+                return jsonify({"error": f"{field} must be between 0.0 and 1.0"}), 400
+            setattr(ann, field, val)
+
+    if "page_number" in data:
+        try:
+            page = int(data["page_number"])
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid page_number"}), 400
+        if page < 1:
+            return jsonify({"error": "page_number must be >= 1"}), 400
+        ann.page_number = page
+
+    db.session.commit()
+
+    return jsonify({
+        "id": ann.id,
+        "attachment_id": ann.attachment_id,
+        "page_number": ann.page_number,
+        "x": ann.x,
+        "y": ann.y,
+        "width": ann.width,
+        "height": ann.height,
+        "created_at": ann.created_at.isoformat() if ann.created_at else None,
+    })
+
+
+@data_bp.route("/api/annotations/<int:annotation_id>", methods=["DELETE"])
+def delete_annotation(annotation_id):
+    """Delete an annotation. Returns 200 with success flag."""
+    ann = db.session.get(AnnotationModel, annotation_id)
+    if ann is None:
+        abort(404)
+
+    db.session.delete(ann)
+    db.session.commit()
+
+    return jsonify({"success": True})
+
+
+# --- Plan Tab Listing (Task 5.1) ---
+
+@data_bp.route("/plan")
+def plan_index():
+    """Render the Plan sub-tab listing emails with PDF attachments."""
+    # Query email records that have at least one PDF attachment
+    records_with_pdfs = (
+        db.session.query(EmailRecordModel)
+        .join(AttachmentModel, EmailRecordModel.id == AttachmentModel.email_record_id)
+        .filter(AttachmentModel.filename.ilike("%.pdf"))
+        .distinct()
+        .all()
+    )
+
+    return render_template(
+        "data_plan.html",
+        records=records_with_pdfs,
+        active_tab="plan",
+    )
+
+
+# --- Plan Editor Page (Task 6.1) ---
+
+@data_bp.route("/plan/<int:attachment_id>")
+def plan_editor(attachment_id):
+    """Render the Plan Editor page for a specific PDF attachment."""
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+    if not att.filename.lower().endswith(".pdf"):
+        abort(404)
+
+    return render_template(
+        "data_plan_editor.html",
+        attachment=att,
+        active_tab="plan",
+    )

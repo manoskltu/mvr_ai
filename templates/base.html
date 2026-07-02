@@ -10,6 +10,8 @@
     <nav class="main-nav">
         <a href="{{ url_for('index') }}" class="nav-link">Hem</a>
         <a href="{{ url_for('data.data_index') }}" class="nav-link">Data</a>
+        <a href="{{ url_for('data.plan_index') }}" class="nav-link">Plan</a>
+        <a href="{{ url_for('data.analys_index') }}" class="nav-link">Analys</a>
     </nav>
 
     {% block content %}{% endblock %}
