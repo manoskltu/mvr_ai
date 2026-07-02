@@ -1,0 +1,44 @@
+{% extends "base.html" %}
+
+{% block title %}E-post — FS Mide Offer Tool{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Data</h1>
+
+    <!-- Sub-navigation -->
+    <nav class="sub-nav">
+        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
+        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
+        <a href="{{ url_for('data.analys_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'analys' }}">Analys</a>
+    </nav>
+
+    <!-- Data table -->
+    <section class="data-table-section">
+        {% if records %}
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Ämne</th>
+                    <th>Avsändare</th>
+                    <th>Datum</th>
+                    <th>Bilagor</th>
+                </tr>
+            </thead>
+            <tbody>
+                {% for record in records %}
+                <tr>
+                    <td><a href="{{ url_for('data.record_detail', record_id=record.id) }}">{{ record.subject or '(inget ämne)' }}</a></td>
+                    <td>{{ record.sender }}</td>
+                    <td>{{ record.date.strftime('%Y-%m-%d %H:%M') if record.date else '—' }}</td>
+                    <td>{{ record.attachments | length }}</td>
+                </tr>
+                {% endfor %}
+            </tbody>
+        </table>
+        {% else %}
+        <p class="text-muted no-data-message">Ingen data har importerats ännu. Gå till <a href="{{ url_for('data.import_index') }}">Import</a> för att lägga till e-post.</p>
+        {% endif %}
+    </section>
+</div>
+{% endblock %}

@@ -1,0 +1,93 @@
+{% extends "base.html" %}
+
+{% block title %}{{ record.subject or '(inget ämne)' }} — FS Mide Offer Tool{% endblock %}
+
+{% block content %}
+<div class="container">
+    <a href="{{ url_for('data.data_index') }}" class="back-link">&larr; Tillbaka till Data</a>
+
+    <h1>{{ record.subject or '(inget ämne)' }}</h1>
+
+    <!-- Sub-navigation -->
+    <nav class="sub-nav">
+        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
+        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
+        <a href="{{ url_for('data.analys_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'analys' }}">Analys</a>
+    </nav>
+
+    <div class="record-detail">
+        <table class="detail-table">
+            <tr>
+                <th>Avsändare</th>
+                <td>{{ record.sender }}</td>
+            </tr>
+            <tr>
+                <th>Mottagare</th>
+                <td>{{ record.recipient }}</td>
+            </tr>
+            <tr>
+                <th>Datum</th>
+                <td>{{ record.date.strftime('%Y-%m-%d %H:%M') if record.date else '—' }}</td>
+            </tr>
+            <tr>
+                <th>Källa</th>
+                <td>{{ record.source_file or '—' }}</td>
+            </tr>
+            <tr>
+                <th>Bilagor ({{ record.attachments | length }})</th>
+                <td>
+                    {% if record.attachments %}
+                    <form action="{{ url_for('data.trigger_analysis', record_id=record.id) }}" method="post">
+                        <ul class="attachment-list">
+                            {% for att in record.attachments %}
+                            <li>
+                                {% if att.filename.lower().endswith('.pdf') %}
+                                <label>
+                                    <input type="checkbox" name="attachment_ids" value="{{ att.id }}">
+                                    {% if att.file_path and att.id %}
+                                    <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
+                                    {% else %}
+                                    {{ att.filename }}
+                                    {% endif %}
+                                </label>
+                                {% if att.id and analysis_status and analysis_status.get(att.id) %}
+                                <span class="badge badge-{{ analysis_status[att.id] }}">{{ analysis_status[att.id] }}</span>
+                                {% endif %}
+                                {% else %}
+                                {% if att.file_path and att.id %}
+                                <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
+                                {% else %}
+                                {{ att.filename }}
+                                {% endif %}
+                                {% endif %}
+                                <span class="text-muted">({{ att.content_type }})</span>
+                            </li>
+                            {% endfor %}
+                        </ul>
+                        <div class="analysis-buttons">
+                            <button type="submit" class="btn btn-primary">Analysera valda</button>
+                            <button type="submit" name="analyze_all" value="1" class="btn btn-secondary"
+                                onclick="document.querySelectorAll('input[name=attachment_ids]').forEach(cb => cb.checked = true)">
+                                Analysera alla
+                            </button>
+                        </div>
+                    </form>
+                    {% if has_analysis_results %}
+                    <p><a href="{{ url_for('data.analys_index') }}">Visa analysresultat &rarr;</a></p>
+                    {% endif %}
+                    {% else %}
+                    <span class="text-muted">Inga bilagor</span>
+                    {% endif %}
+                </td>
+            </tr>
+        </table>
+
+        <h2>Meddelandetext</h2>
+        <pre class="body-text">{{ record.body_text or '(tomt meddelande)' }}</pre>
+
+        <form action="{{ url_for('data.delete_record', record_id=record.id) }}" method="post" class="delete-form">
+            <button type="submit" class="btn btn-danger" onclick="return confirm('Är du säker på att du vill ta bort denna post?')">Ta bort</button>
+        </form>
+    </div>
+</div>
+{% endblock %}

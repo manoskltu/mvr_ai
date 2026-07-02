@@ -1,0 +1,92 @@
+{% extends "base.html" %}
+
+{% block title %}Analysresultat — FS Mide Offer Tool{% endblock %}
+
+{% block content %}
+<div class="container">
+    <a href="{{ url_for('data.analys_index') }}" class="back-link">&larr; Tillbaka till Analys</a>
+
+    <h1>Analysresultat</h1>
+
+    <!-- Source info -->
+    <div class="analys-meta">
+        <p><strong>PDF:</strong> {{ analysis.attachment.filename }}</p>
+        <p><strong>E-post:</strong> {{ analysis.attachment.email_record.subject or '(inget ämne)' }}</p>
+        <p><strong>Tidpunkt:</strong> {{ analysis.created_at.strftime('%Y-%m-%d %H:%M') if analysis.created_at else '—' }}</p>
+        <p><strong>Status:</strong> <span class="badge badge-{{ analysis.status }}">{{ analysis.status }}</span></p>
+    </div>
+
+    {% if result.status == 'failed' %}
+    <div class="alert alert-error">
+        <strong>Fel:</strong> {{ result.error_message or 'Okänt fel' }}
+    </div>
+    {% endif %}
+
+    <!-- Material items table -->
+    {% if result.materials %}
+    <h2>Material</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Profiltyp</th>
+                <th>Dimensioner</th>
+                <th>Antal</th>
+                <th>Enhet</th>
+                <th>Längd</th>
+                <th>Sida</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for item in result.materials %}
+            <tr>
+                <td>{{ item.profile_type }}</td>
+                <td>
+                    {% for key, val in item.dimensions.items() %}
+                        {{ key }}={{ val }}{% if not loop.last %}, {% endif %}
+                    {% endfor %}
+                </td>
+                <td>{{ item.quantity if item.quantity is not none else '—' }}</td>
+                <td>{{ item.unit or '—' }}</td>
+                <td>{{ item.length if item.length is not none else '—' }}</td>
+                <td>{{ item.source_page }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% else %}
+    <p class="text-muted">Inga material hittades i denna PDF.</p>
+    {% endif %}
+
+    <!-- Page metadata -->
+    {% if result.pages %}
+    <h2>Sidmetadata</h2>
+    <table class="data-table">
+        <thead>
+            <tr>
+                <th>Sida</th>
+                <th>Ritningsnr</th>
+                <th>Rev</th>
+                <th>Benämning</th>
+                <th>OCR</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for page in result.pages %}
+            <tr>
+                <td>{{ page.page_number }}</td>
+                <td>{{ page.title_block.drawing_number if page.title_block else '—' }}</td>
+                <td>{{ page.title_block.revision if page.title_block else '—' }}</td>
+                <td>{{ page.title_block.sheet_title if page.title_block else '—' }}</td>
+                <td>{{ 'Ja' if page.used_ocr else 'Nej' }}</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
+    {% endif %}
+
+    <!-- Re-run button -->
+    <form action="{{ url_for('data.rerun_analysis', analysis_id=analysis.id) }}" method="post" class="rerun-form">
+        <button type="submit" class="btn btn-primary">Kör om</button>
+    </form>
+</div>
+{% endblock %}

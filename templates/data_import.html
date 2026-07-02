@@ -1,0 +1,65 @@
+{% extends "base.html" %}
+
+{% block title %}Import — FS Mide Offer Tool{% endblock %}
+
+{% block content %}
+<div class="container">
+    <h1>Data</h1>
+
+    <!-- Sub-navigation -->
+    <nav class="sub-nav">
+        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
+        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
+        <a href="{{ url_for('data.analys_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'analys' }}">Analys</a>
+    </nav>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Import section -->
+    <section class="import-section">
+        <!-- File upload -->
+        <div class="import-card">
+            <h3>Ladda upp .eml-filer</h3>
+            <form action="{{ url_for('data.upload') }}" method="post" enctype="multipart/form-data">
+                <input type="file" name="files" accept=".eml" multiple>
+                <button type="submit" class="btn btn-primary">Importera</button>
+            </form>
+        </div>
+
+        <!-- Asset browser -->
+        <div class="import-card">
+            <h3>Importera från assets-mappen</h3>
+            {% if asset_files %}
+            <form action="{{ url_for('data.import_assets') }}" method="post">
+                <div class="asset-list">
+                    {% for file in asset_files %}
+                    <label class="asset-item">
+                        <input type="checkbox" name="asset_files" value="{{ file }}">
+                        {{ file }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Importera valda</button>
+            </form>
+            {% else %}
+            <p class="text-muted">Inga .eml-filer hittades i assets-mappen.</p>
+            {% endif %}
+        </div>
+
+        <!-- Manual entry link -->
+        <div class="import-card">
+            <h3>Lägg till manuellt</h3>
+            <a href="{{ url_for('data.manual_form') }}" class="btn btn-secondary">Lägg till post</a>
+        </div>
+    </section>
+</div>
+{% endblock %}
