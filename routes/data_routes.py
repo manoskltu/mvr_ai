@@ -120,22 +120,7 @@ def record_detail(record_id):
     if record is None:
         abort(404)
 
-    # Get analysis status for each attachment
-    analysis_status = {}
-    has_analysis_results = False
-    for att in record.attachments:
-        if att.id:
-            result = AnalysisResultModel.query.filter_by(attachment_id=att.id).first()
-            if result:
-                analysis_status[att.id] = result.status
-                has_analysis_results = True
-
-    return render_template(
-        "data_detail.html",
-        record=record,
-        analysis_status=analysis_status,
-        has_analysis_results=has_analysis_results,
-    )
+    return render_template("data_detail.html", record=record)
 
 
 @data_bp.route("/record/<record_id>/attachment/<int:attachment_id>")

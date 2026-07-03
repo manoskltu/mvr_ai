@@ -36,45 +36,21 @@
                 <th>Bilagor ({{ record.attachments | length }})</th>
                 <td>
                     {% if record.attachments %}
-                    <form action="{{ url_for('data.trigger_analysis', record_id=record.id) }}" method="post">
-                        <ul class="attachment-list">
-                            {% for att in record.attachments %}
-                            <li>
-                                {% if att.filename.lower().endswith('.pdf') %}
-                                <label>
-                                    <input type="checkbox" name="attachment_ids" value="{{ att.id }}">
-                                    {% if att.file_path and att.id %}
-                                    <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
-                                    {% else %}
-                                    {{ att.filename }}
-                                    {% endif %}
-                                </label>
-                                {% if att.id and analysis_status and analysis_status.get(att.id) %}
-                                <span class="badge badge-{{ analysis_status[att.id] }}">{{ analysis_status[att.id] }}</span>
-                                {% endif %}
-                                <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-secondary" style="margin-left:0.5rem;padding:0.2rem 0.5rem;font-size:0.8rem;">Plan</a>
-                                {% else %}
-                                {% if att.file_path and att.id %}
-                                <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
-                                {% else %}
-                                {{ att.filename }}
-                                {% endif %}
-                                {% endif %}
-                                <span class="text-muted">({{ att.content_type }})</span>
-                            </li>
-                            {% endfor %}
-                        </ul>
-                        <div class="analysis-buttons">
-                            <button type="submit" class="btn btn-primary">Analysera valda</button>
-                            <button type="submit" name="analyze_all" value="1" class="btn btn-secondary"
-                                onclick="document.querySelectorAll('input[name=attachment_ids]').forEach(cb => cb.checked = true)">
-                                Analysera alla
-                            </button>
-                        </div>
-                    </form>
-                    {% if has_analysis_results %}
-                    <p><a href="{{ url_for('data.analys_index') }}">Visa analysresultat &rarr;</a></p>
-                    {% endif %}
+                    <ul class="attachment-list">
+                        {% for att in record.attachments %}
+                        <li>
+                            {% if att.file_path and att.id %}
+                            <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
+                            {% else %}
+                            {{ att.filename }}
+                            {% endif %}
+                            <span class="text-muted">({{ att.content_type }})</span>
+                            {% if att.filename.lower().endswith('.pdf') and att.id %}
+                            <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-secondary btn-sm">Plan</a>
+                            {% endif %}
+                        </li>
+                        {% endfor %}
+                    </ul>
                     {% else %}
                     <span class="text-muted">Inga bilagor</span>
                     {% endif %}

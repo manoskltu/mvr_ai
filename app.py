@@ -50,6 +50,21 @@ def create_app() -> Flask:
 
     app.register_blueprint(data_bp)
 
+    @app.context_processor
+    def inject_nav_active():
+        """Determine active nav item from the request path."""
+        from flask import request
+
+        path = request.path
+        if path.startswith("/data/plan") or path.startswith("/data/api/page-image"):
+            return {"nav_active": "plan"}
+        elif path.startswith("/data/analys"):
+            return {"nav_active": "analys"}
+        elif path.startswith("/data"):
+            return {"nav_active": "data"}
+        else:
+            return {"nav_active": "home"}
+
     @app.after_request
     def set_charset(response):
         if "text/html" in response.content_type:

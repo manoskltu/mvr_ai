@@ -18,6 +18,9 @@ const state = {
     isDragging: false,
     dragStart: null,         // {x, y} in canvas pixels
     dragAction: null,        // 'draw' | 'move' | 'resize'
+    zoom: 100,              // Zoom percentage (25-300)
+    isPanning: false,       // True when middle-click or space+drag panning
+    panStart: null,         // {x, y, scrollLeft, scrollTop} for panning
     resizeHandle: null,      // 'nw' | 'ne' | 'sw' | 'se'
     dragAnnotation: null,    // annotation being moved/resized
     originalAnnotation: null, // snapshot for rollback
@@ -62,6 +65,31 @@ function init(attachmentId) {
     state.canvas.addEventListener('mousemove', handleMouseMove);
     state.canvas.addEventListener('mouseup', handleMouseUp);
 
+    // Scroll wheel zoom
+    state.canvas.addEventListener('wheel', handleWheel, { passive: false });
+
+    // Middle mouse button panning
+    const container = document.getElementById('editor-container');
+    container.addEventListener('mousedown', handlePanStart);
+    container.addEventListener('mousemove', handlePanMove);
+    container.addEventListener('mouseup', handlePanEnd);
+    container.addEventListener('mouseleave', handlePanEnd);
+
+    // Space key for temporary pan mode
+    document.addEventListener('keydown', function (e) {
+        if (e.code === 'Space' && !e.repeat && e.target.tagName !== 'INPUT' && e.target.tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            state._spaceHeld = true;
+            container.style.cursor = 'grab';
+        }
+    });
+    document.addEventListener('keyup', function (e) {
+        if (e.code === 'Space') {
+            state._spaceHeld = false;
+            container.style.cursor = '';
+        }
+    });
+
     // Key events
     document.addEventListener('keydown', handleKeyDown);
 
@@ -93,11 +121,16 @@ async function loadPage(pageNumber) {
     state.currentPage = pageNumber;
     state.selectedId = null;
 
+    // Show loading indicator
+    const loader = document.getElementById('loading-indicator');
+    if (loader) loader.style.display = 'flex';
+
     const url = `/data/api/page-image/${state.attachmentId}/${pageNumber}`;
 
     try {
         const response = await fetch(url);
         if (!response.ok) {
+            if (loader) loader.style.display = 'none';
             showError('Kunde inte ladda sidan.');
             return;
         }
@@ -110,6 +143,13 @@ async function loadPage(pageNumber) {
 
         const blob = await response.blob();
         const objectUrl = URL.createObjectURL(blob);
+
+        // Hide loader when image finishes rendering
+        state.imageElement.onload = function () {
+            if (loader) loader.style.display = 'none';
+            resizeCanvas();
+            render();
+        };
         state.imageElement.src = objectUrl;
 
         // Update page nav UI
@@ -118,6 +158,8 @@ async function loadPage(pageNumber) {
         // Fetch annotations for this page
         await fetchAnnotations(state.attachmentId, pageNumber);
     } catch (err) {
+        const loader = document.getElementById('loading-indicator');
+        if (loader) loader.style.display = 'none';
         showError('Kunde inte ladda sidan.');
     }
 }
@@ -202,6 +244,27 @@ function getCanvasPos(e) {
 }
 
 function handleMouseDown(e) {
+    // Middle button always pans
+    if (e.button === 1) return;
+
+    // Pan mode: left click pans
+    if (state.mode === 'pan' && e.button === 0) {
+        e.preventDefault();
+        const container = document.getElementById('editor-container');
+        state.isPanning = true;
+        state.panStart = {
+            x: e.clientX,
+            y: e.clientY,
+            scrollLeft: container.scrollLeft,
+            scrollTop: container.scrollTop,
+        };
+        container.style.cursor = 'grabbing';
+        return;
+    }
+
+    // Skip if space held (already handled by pan start)
+    if (state._spaceHeld) return;
+
     const pos = getCanvasPos(e);
 
     if (state.mode === 'draw') {
@@ -252,10 +315,19 @@ function handleMouseDown(e) {
 }
 
 function handleMouseMove(e) {
+    // If in pan mode and panning via left click, delegate to pan handler
+    if (state.isPanning && state.mode === 'pan') {
+        handlePanMove(e);
+        return;
+    }
+
     if (!state.isDragging) {
         // Update cursor based on context
         if (state.mode === 'draw') {
             state.canvas.style.cursor = 'crosshair';
+        } else if (state.mode === 'pan') {
+            state.canvas.style.cursor = state.isPanning ? 'grabbing' : 'grab';
+            return;
         } else if (state.mode === 'select') {
             const pos = getCanvasPos(e);
             if (state.selectedId !== null) {
@@ -329,6 +401,12 @@ function handleMouseMove(e) {
 }
 
 function handleMouseUp(e) {
+    // End pan mode left-click pan
+    if (state.isPanning && state.mode === 'pan') {
+        handlePanEnd(e);
+        return;
+    }
+
     if (!state.isDragging) return;
     state.isDragging = false;
 
@@ -537,9 +615,16 @@ function setMode(mode) {
     // Update toolbar button styles
     document.getElementById('btn-draw').classList.toggle('active', mode === 'draw');
     document.getElementById('btn-select').classList.toggle('active', mode === 'select');
+    document.getElementById('btn-pan').classList.toggle('active', mode === 'pan');
 
     // Update cursor
-    state.canvas.style.cursor = mode === 'draw' ? 'crosshair' : 'default';
+    if (mode === 'draw') {
+        state.canvas.style.cursor = 'crosshair';
+    } else if (mode === 'pan') {
+        state.canvas.style.cursor = 'grab';
+    } else {
+        state.canvas.style.cursor = 'default';
+    }
 
     render();
 }
@@ -585,6 +670,130 @@ function showError(msg) {
             setTimeout(() => toast.remove(), 300);
         }
     }, 5000);
+}
+
+// --- Pan (drag to scroll) ---
+
+function handlePanStart(e) {
+    // Middle mouse button (button 1) or Space + left click
+    if (e.button === 1 || (e.button === 0 && state._spaceHeld)) {
+        e.preventDefault();
+        const container = document.getElementById('editor-container');
+        state.isPanning = true;
+        state.panStart = {
+            x: e.clientX,
+            y: e.clientY,
+            scrollLeft: container.scrollLeft,
+            scrollTop: container.scrollTop,
+        };
+        container.style.cursor = 'grabbing';
+    }
+}
+
+function handlePanMove(e) {
+    if (!state.isPanning || !state.panStart) return;
+    e.preventDefault();
+    const container = document.getElementById('editor-container');
+    const dx = e.clientX - state.panStart.x;
+    const dy = e.clientY - state.panStart.y;
+    container.scrollLeft = state.panStart.scrollLeft - dx;
+    container.scrollTop = state.panStart.scrollTop - dy;
+}
+
+function handlePanEnd(e) {
+    if (state.isPanning) {
+        state.isPanning = false;
+        state.panStart = null;
+        const container = document.getElementById('editor-container');
+        container.style.cursor = state._spaceHeld ? 'grab' : '';
+    }
+}
+
+// --- Zoom controls ---
+
+function setZoom(value) {
+    state.zoom = Math.max(25, Math.min(300, parseInt(value, 10)));
+
+    // Update slider and label
+    const slider = document.getElementById('zoom-slider');
+    const label = document.getElementById('zoom-level');
+    if (slider) slider.value = state.zoom;
+    if (label) label.textContent = state.zoom + '%';
+
+    // Apply zoom by scaling the editor container contents
+    const img = state.imageElement;
+    const container = document.getElementById('editor-container');
+
+    const scale = state.zoom / 100;
+    img.style.width = (scale * 100) + '%';
+    img.style.maxWidth = 'none';
+
+    // Resize canvas to match
+    resizeCanvas();
+    render();
+}
+
+function zoomIn() {
+    setZoom(state.zoom + 25);
+}
+
+function zoomOut() {
+    setZoom(state.zoom - 25);
+}
+
+function handleWheel(e) {
+    if (e.ctrlKey || e.metaKey) {
+        // Ctrl+scroll = zoom
+        e.preventDefault();
+        if (e.deltaY < 0) {
+            zoomIn();
+        } else {
+            zoomOut();
+        }
+    }
+    // Without Ctrl: normal scroll (vertical pan) is handled by browser overflow
+}
+
+// --- Trigger analysis ---
+
+async function triggerAnalysis() {
+    const btn = document.getElementById('btn-analyze');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px;"></span>Analyserar...';
+
+    const container = document.getElementById('editor-container');
+    const recordId = container.dataset.recordId;
+
+    try {
+        const formData = new FormData();
+        formData.append('attachment_ids', state.attachmentId);
+
+        const result = await fetch(`/data/record/${recordId}/analyze`, {
+            method: 'POST',
+            body: formData,
+        });
+
+        if (result.ok || result.redirected) {
+            btn.innerHTML = '✓ Klar';
+            btn.classList.remove('btn-primary');
+            btn.classList.add('btn-secondary');
+            setTimeout(() => {
+                btn.innerHTML = originalText;
+                btn.classList.remove('btn-secondary');
+                btn.classList.add('btn-primary');
+                btn.disabled = false;
+            }, 3000);
+        } else {
+            showError('Analysen misslyckades.');
+            btn.innerHTML = originalText;
+            btn.disabled = false;
+        }
+    } catch (err) {
+        showError('Analysen misslyckades.');
+        btn.innerHTML = originalText;
+        btn.disabled = false;
+    }
 }
 
 // --- Initialize on page load ---

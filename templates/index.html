@@ -3,8 +3,41 @@
 {% block title %}{{ project_name }}{% endblock %}
 
 {% block content %}
-<main>
+<div class="container">
     <h1>{{ project_name }}</h1>
     <p class="subtitle">Prototype</p>
-</main>
+
+    <!-- Application flowchart -->
+    <div class="flowchart">
+        <a href="{{ url_for('data.import_index') }}" class="flowchart-block">
+            <div class="flowchart-icon">📧</div>
+            <div class="flowchart-label">Import</div>
+            <div class="flowchart-desc">Importera e-post med bilagor</div>
+        </a>
+
+        <div class="flowchart-arrow">→</div>
+
+        <a href="{{ url_for('data.data_index') }}" class="flowchart-block">
+            <div class="flowchart-icon">📋</div>
+            <div class="flowchart-label">Data</div>
+            <div class="flowchart-desc">Visa importerade e-postmeddelanden</div>
+        </a>
+
+        <div class="flowchart-arrow">→</div>
+
+        <a href="{{ url_for('data.plan_index') }}" class="flowchart-block">
+            <div class="flowchart-icon">✏️</div>
+            <div class="flowchart-label">Plan</div>
+            <div class="flowchart-desc">Markera områden i ritningar</div>
+        </a>
+
+        <div class="flowchart-arrow">→</div>
+
+        <a href="{{ url_for('data.analys_index') }}" class="flowchart-block">
+            <div class="flowchart-icon">🔍</div>
+            <div class="flowchart-label">Analys</div>
+            <div class="flowchart-desc">Extrahera material från ritningar</div>
+        </a>
+    </div>
+</div>
 {% endblock %}

@@ -448,3 +448,139 @@ ol, ul {
         transform: translateY(0);
     }
 }
+
+/* Icon buttons */
+.btn-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem 0.65rem;
+    line-height: 1;
+}
+
+.btn-icon svg {
+    display: block;
+}
+
+/* Loading indicator */
+.loading-indicator {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    padding: 2rem;
+    color: #6c757d;
+    font-size: 0.95rem;
+}
+
+.spinner {
+    width: 24px;
+    height: 24px;
+    border: 3px solid #dee2e6;
+    border-top-color: #3498db;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to { transform: rotate(360deg); }
+}
+
+/* Active nav link */
+.main-nav .nav-link.nav-active {
+    color: #3498db;
+    border-bottom: 2px solid #3498db;
+    padding-bottom: 0.25rem;
+}
+
+/* Flowchart on home page */
+.flowchart {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    margin-top: 3rem;
+    flex-wrap: wrap;
+}
+
+.flowchart-block {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 1.5rem 1.25rem;
+    background: #fff;
+    border: 2px solid #dee2e6;
+    border-radius: 8px;
+    text-decoration: none;
+    color: #222;
+    min-width: 140px;
+    transition: border-color 0.2s, box-shadow 0.2s;
+}
+
+.flowchart-block:hover {
+    border-color: #3498db;
+    box-shadow: 0 2px 8px rgba(52, 152, 219, 0.15);
+}
+
+.flowchart-icon {
+    font-size: 2rem;
+    margin-bottom: 0.5rem;
+}
+
+.flowchart-label {
+    font-weight: 600;
+    font-size: 1rem;
+    margin-bottom: 0.25rem;
+}
+
+.flowchart-desc {
+    font-size: 0.8rem;
+    color: #6c757d;
+}
+
+.flowchart-arrow {
+    font-size: 1.5rem;
+    color: #adb5bd;
+    font-weight: bold;
+}
+
+/* Toolbar spacer */
+.plan-toolbar-spacer {
+    flex: 1;
+}
+
+/* Small button variant */
+.btn-sm {
+    padding: 0.2rem 0.5rem;
+    font-size: 0.8rem;
+}
+
+/* Zoom controls */
+.plan-zoom-controls {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    margin-left: 0.75rem;
+}
+
+.plan-zoom-controls input[type="range"] {
+    width: 100px;
+    cursor: pointer;
+}
+
+.zoom-level-text {
+    font-size: 0.8rem;
+    color: #495057;
+    min-width: 3rem;
+    text-align: center;
+}
+
+/* Allow horizontal scroll when zoomed in */
+.plan-editor-container {
+    overflow: auto;
+    max-height: 75vh;
+    border: 1px solid #dee2e6;
+    border-radius: 4px;
+    background: #f0f0f0;
+}
