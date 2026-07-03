@@ -111,8 +111,11 @@ function init(attachmentId) {
 
 function resizeCanvas() {
     const img = state.imageElement;
+    // Match canvas pixel size to displayed image size
     state.canvas.width = img.clientWidth;
     state.canvas.height = img.clientHeight;
+    state.canvas.style.width = img.clientWidth + 'px';
+    state.canvas.style.height = img.clientHeight + 'px';
 }
 
 // --- Page loading ---
@@ -147,8 +150,8 @@ async function loadPage(pageNumber) {
         // Hide loader when image finishes rendering
         state.imageElement.onload = function () {
             if (loader) loader.style.display = 'none';
-            resizeCanvas();
-            render();
+            // Apply current zoom level to the new page
+            setZoom(state.zoom);
         };
         state.imageElement.src = objectUrl;
 
@@ -712,7 +715,7 @@ function handlePanEnd(e) {
 // --- Zoom controls ---
 
 function setZoom(value) {
-    state.zoom = Math.max(25, Math.min(300, parseInt(value, 10)));
+    state.zoom = Math.max(25, Math.min(800, parseInt(value, 10)));
 
     // Update slider and label
     const slider = document.getElementById('zoom-slider');
@@ -720,16 +723,34 @@ function setZoom(value) {
     if (slider) slider.value = state.zoom;
     if (label) label.textContent = state.zoom + '%';
 
-    // Apply zoom by scaling the editor container contents
+    // Apply zoom using transform for crisp scaling without stretching
     const img = state.imageElement;
-    const container = document.getElementById('editor-container');
-
+    const canvas = state.canvas;
     const scale = state.zoom / 100;
-    img.style.width = (scale * 100) + '%';
+
+    // Use the image's natural dimensions to calculate correct display size
+    const naturalWidth = img.naturalWidth || img.width;
+    const naturalHeight = img.naturalHeight || img.height;
+    const container = document.getElementById('editor-container');
+    const containerWidth = container.clientWidth;
+
+    // Base size: fit to container width at 100%
+    const baseWidth = containerWidth;
+    const baseHeight = (naturalHeight / naturalWidth) * baseWidth;
+
+    const displayWidth = baseWidth * scale;
+    const displayHeight = baseHeight * scale;
+
+    img.style.width = displayWidth + 'px';
+    img.style.height = displayHeight + 'px';
     img.style.maxWidth = 'none';
 
-    // Resize canvas to match
-    resizeCanvas();
+    // Match canvas to image display size
+    canvas.style.width = displayWidth + 'px';
+    canvas.style.height = displayHeight + 'px';
+    canvas.width = displayWidth;
+    canvas.height = displayHeight;
+
     render();
 }
 

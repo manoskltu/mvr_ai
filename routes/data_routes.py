@@ -367,12 +367,12 @@ def trigger_analysis(record_id):
         if existing:
             existing.status = result.status
             existing.result_json = result_json
-            existing.created_at = datetime.utcnow()
+            existing.created_at = datetime.now()
         else:
             new_result = AnalysisResultModel(
                 attachment_id=att_id,
                 status=result.status,
-                created_at=datetime.utcnow(),
+                created_at=datetime.now(),
                 result_json=result_json,
             )
             db.session.add(new_result)
@@ -457,7 +457,7 @@ def rerun_analysis(analysis_id):
 
     analysis.status = result.status
     analysis.result_json = result_json
-    analysis.created_at = datetime.utcnow()
+    analysis.created_at = datetime.now()
     db.session.commit()
 
     flash("Analysen har körts om.", "success")

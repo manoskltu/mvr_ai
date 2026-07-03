@@ -64,7 +64,7 @@ class AnnotationModel(db.Model):
     y = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
     width = db.Column(db.Float, nullable=False)   # ratio 0.0–1.0
     height = db.Column(db.Float, nullable=False)  # ratio 0.0–1.0
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
 
     attachment = db.relationship("AttachmentModel", backref="annotations")
 
@@ -85,7 +85,7 @@ class AnalysisResultModel(db.Model):
         nullable=False,
     )
     status = db.Column(db.String(20), nullable=False, default="pending")
-    created_at = db.Column(db.DateTime, nullable=False, default=datetime.utcnow)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
     result_json = db.Column(db.Text, nullable=False, default="{}")
 
     attachment = db.relationship("AttachmentModel", backref="analysis_results")

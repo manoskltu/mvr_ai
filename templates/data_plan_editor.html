@@ -24,7 +24,10 @@
         </button>
         <button id="btn-pan" class="btn btn-icon btn-secondary" onclick="setMode('pan')" title="Panorera (pan)">
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M12 2v20M2 12h20M5 5l2 2M17 5l-2 2M5 19l2-2M17 19l-2-2"/>
+                <path d="M18 11V6a2 2 0 0 0-4 0v5"/>
+                <path d="M14 10V4a2 2 0 0 0-4 0v6"/>
+                <path d="M10 10.5V6a2 2 0 0 0-4 0v8"/>
+                <path d="M18 11a2 2 0 0 1 4 0v5a8 8 0 0 1-8 8h-2c-2.5 0-4.5-1-6.2-2.8L3 18.5"/>
             </svg>
         </button>
         <button id="btn-delete" class="btn btn-icon btn-danger" onclick="deleteSelected()" title="Ta bort (delete)">
@@ -45,7 +48,7 @@
             <button class="btn btn-secondary btn-icon" onclick="zoomOut()" title="Zooma ut (-)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
-            <input type="range" id="zoom-slider" min="25" max="300" value="100" step="5" oninput="setZoom(this.value)">
+            <input type="range" id="zoom-slider" min="25" max="800" value="100" step="5" oninput="setZoom(this.value)">
             <button class="btn btn-secondary btn-icon" onclick="zoomIn()" title="Zooma in (+)">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></svg>
             </button>
