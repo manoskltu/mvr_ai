@@ -1,14 +1,66 @@
 {% extends "base.html" %}
 
-{% block title %}E-post — FS Mide Offer Tool{% endblock %}
+{% block title %}Data — FS Mide Offer Tool{% endblock %}
 
 {% block content %}
 <div class="container">
-    <!-- Sub-navigation -->
-    <nav class="sub-nav">
-        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
-        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
-    </nav>
+
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
+
+    <!-- Toolbar -->
+    <div class="data-toolbar">
+        <button type="button" class="btn btn-primary" onclick="document.getElementById('import-panel').classList.toggle('hidden')" title="Importera e-post">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/>
+            </svg>
+            Importera
+        </button>
+        <a href="{{ url_for('data.manual_form') }}" class="btn btn-secondary" title="Lägg till manuellt">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                <line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/>
+            </svg>
+            Lägg till
+        </a>
+    </div>
+
+    <!-- Import panel (collapsible) -->
+    <div id="import-panel" class="import-panel hidden">
+        <div class="import-card">
+            <h3>Ladda upp .eml-filer</h3>
+            <form action="{{ url_for('data.upload') }}" method="post" enctype="multipart/form-data">
+                <input type="file" name="files" accept=".eml" multiple>
+                <button type="submit" class="btn btn-primary">Importera</button>
+            </form>
+        </div>
+
+        <div class="import-card">
+            <h3>Importera från assets-mappen</h3>
+            {% if asset_files %}
+            <form action="{{ url_for('data.import_assets') }}" method="post">
+                <div class="asset-list">
+                    {% for file in asset_files %}
+                    <label class="asset-item">
+                        <input type="checkbox" name="asset_files" value="{{ file }}">
+                        {{ file }}
+                    </label>
+                    {% endfor %}
+                </div>
+                <button type="submit" class="btn btn-primary">Importera valda</button>
+            </form>
+            {% else %}
+            <p class="text-muted">Inga .eml-filer hittades i assets-mappen.</p>
+            {% endif %}
+        </div>
+    </div>
 
     <!-- Data table -->
     <section class="data-table-section">
@@ -34,7 +86,7 @@
             </tbody>
         </table>
         {% else %}
-        <p class="text-muted no-data-message">Ingen data har importerats ännu. Gå till <a href="{{ url_for('data.import_index') }}">Import</a> för att lägga till e-post.</p>
+        <p class="text-muted no-data-message">Ingen data har importerats ännu. Klicka "Importera" för att lägga till e-post.</p>
         {% endif %}
     </section>
 </div>

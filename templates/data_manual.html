@@ -1,12 +1,12 @@
 {% extends "base.html" %}
 
-{% block title %}Lägg till post — FS Mide Offer Tool{% endblock %}
+{% block title %}Lägg till manuellt — FS Mide Offer Tool{% endblock %}
 
 {% block content %}
 <div class="container">
     <a href="{{ url_for('data.data_index') }}" class="back-link">&larr; Tillbaka till Data</a>
 
-    <h1>Lägg till post manuellt</h1>
+    <h1>Lägg till manuellt</h1>
 
     {% if errors %}
     <div class="validation-errors">
@@ -18,7 +18,12 @@
     </div>
     {% endif %}
 
-    <form action="{{ url_for('data.manual_submit') }}" method="post" class="manual-form">
+    <form action="{{ url_for('data.manual_submit') }}" method="post" enctype="multipart/form-data" class="manual-form">
+        <div class="form-group">
+            <label for="subject">Ämne *</label>
+            <input type="text" id="subject" name="subject" value="{{ form_data.get('subject', '') }}" required>
+        </div>
+
         <div class="form-group">
             <label for="sender">Avsändare *</label>
             <input type="text" id="sender" name="sender" value="{{ form_data.get('sender', '') }}" required>
@@ -30,11 +35,6 @@
         </div>
 
         <div class="form-group">
-            <label for="subject">Ämne *</label>
-            <input type="text" id="subject" name="subject" value="{{ form_data.get('subject', '') }}" required>
-        </div>
-
-        <div class="form-group">
             <label for="date">Datum</label>
             <input type="datetime-local" id="date" name="date" value="{{ form_data.get('date', '') }}">
         </div>
@@ -42,6 +42,12 @@
         <div class="form-group">
             <label for="body_text">Meddelandetext</label>
             <textarea id="body_text" name="body_text" rows="8">{{ form_data.get('body_text', '') }}</textarea>
+        </div>
+
+        <div class="form-group">
+            <label for="attachments">Bilagor</label>
+            <input type="file" id="attachments" name="attachments" multiple>
+            <p class="text-muted" style="margin-top: 0.25rem;">Välj en eller flera filer (PDF, ZIP, bilder, etc.)</p>
         </div>
 
         <button type="submit" class="btn btn-primary">Spara</button>

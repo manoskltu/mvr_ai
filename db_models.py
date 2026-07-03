@@ -45,6 +45,7 @@ class AttachmentModel(db.Model):
     filename = db.Column(db.Text, nullable=False, default="")
     content_type = db.Column(db.Text, nullable=False, default="")
     file_path = db.Column(db.Text, nullable=False, default="")
+    in_plan = db.Column(db.Boolean, nullable=False, default=False)
 
 
 class AnnotationModel(db.Model):

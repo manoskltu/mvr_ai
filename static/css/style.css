@@ -658,3 +658,88 @@ ol, ul {
 .attachment-item.marked-for-deletion .btn-danger-ghost {
     color: #27ae60;
 }
+
+/* Plan group toggle (collapsible) */
+.plan-group {
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 6px;
+    margin-bottom: 0.75rem;
+    overflow: hidden;
+}
+
+.plan-group-toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    border: none;
+    background: #f8f9fa;
+    cursor: pointer;
+    text-align: left;
+    font-size: 0.95rem;
+}
+
+.plan-group-toggle:hover {
+    background: #e9ecef;
+}
+
+.plan-group-toggle .toggle-arrow {
+    transition: transform 0.2s;
+}
+
+.plan-group-title {
+    font-weight: 600;
+    color: #2c3e50;
+}
+
+.plan-group-list {
+    list-style: none;
+    padding: 0.5rem 1rem 0.75rem 2.5rem;
+}
+
+.plan-group-list li {
+    padding: 0.3rem 0;
+}
+
+.plan-group-list a {
+    color: #3498db;
+    text-decoration: none;
+}
+
+.plan-group-list a:hover {
+    text-decoration: underline;
+}
+
+/* Export to plan actions */
+.export-plan-actions {
+    margin: 0.75rem 0 1.5rem;
+}
+
+/* Plan checkbox */
+.plan-checkbox {
+    margin-right: 0.4rem;
+    vertical-align: middle;
+}
+
+/* Data toolbar */
+.data-toolbar {
+    display: flex;
+    gap: 0.75rem;
+    margin-bottom: 1.25rem;
+}
+
+/* Import panel (collapsible) */
+.import-panel {
+    margin-bottom: 1.5rem;
+}
+
+.import-panel.hidden {
+    display: none;
+}
+
+/* Attachment actions row */
+.attachment-actions {
+    margin-top: 0.5rem;
+}

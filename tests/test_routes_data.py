@@ -30,7 +30,7 @@ def _load_real_eml(relative_path: str) -> bytes:
 
 
 class TestEmailsTab:
-    """Test GET /data/ (E-post sub-tab)."""
+    """Test GET /data/ (Data page)."""
 
     def test_emails_page_returns_200(self, client):
         """GET /data/ should return HTTP 200."""
@@ -43,27 +43,23 @@ class TestEmailsTab:
         text = response.data.decode("utf-8")
         assert "ingen data" in text.lower() or "no data" in text.lower()
 
-    def test_emails_page_contains_sub_nav(self, client):
-        """E-post page should contain the sub-navigation."""
+    def test_emails_page_contains_import_button(self, client):
+        """Data page should contain an import button."""
         response = client.get("/data/")
         text = response.data.decode("utf-8")
-        assert "sub-nav" in text
-        assert "E-post" in text
-        assert "Import" in text
+        assert "Importera" in text
 
-    def test_emails_page_has_active_tab(self, client):
-        """E-post tab should be marked active."""
+    def test_emails_page_has_import_panel(self, client):
+        """Data page should contain the hidden import panel."""
         response = client.get("/data/")
         text = response.data.decode("utf-8")
-        # The E-post link should have 'active' class
-        assert 'class="sub-nav-link active"' in text or "sub-nav-link active" in text
+        assert "import-panel" in text
 
-    def test_emails_page_does_not_contain_import_forms(self, client):
-        """E-post page should NOT contain upload or asset import forms."""
+    def test_emails_page_does_not_show_import_forms_by_default(self, client):
+        """Import panel should be hidden by default (has 'hidden' class)."""
         response = client.get("/data/")
         text = response.data.decode("utf-8")
-        assert 'action="/data/upload"' not in text
-        assert 'action="/data/import-assets"' not in text
+        assert 'import-panel hidden' in text
 
     def test_emails_page_shows_records(self, client):
         """When records exist, they should appear in the table."""
@@ -78,56 +74,11 @@ class TestEmailsTab:
         assert "data-table" in text
 
 
-class TestImportTab:
-    """Test GET /data/import (Import sub-tab)."""
-
-    def test_import_page_returns_200(self, client):
-        """GET /data/import should return HTTP 200."""
-        response = client.get("/data/import")
-        assert response.status_code == 200
-
-    def test_import_page_contains_sub_nav(self, client):
-        """Import page should contain the sub-navigation."""
-        response = client.get("/data/import")
-        text = response.data.decode("utf-8")
-        assert "sub-nav" in text
-        assert "E-post" in text
-        assert "Import" in text
-
-    def test_import_page_has_active_tab(self, client):
-        """Import tab should be marked active."""
-        response = client.get("/data/import")
-        text = response.data.decode("utf-8")
-        # Check that Import link has active class
-        assert "Import" in text
-
-    def test_import_page_does_not_contain_data_table(self, client):
-        """Import page should NOT contain the records data table."""
-        # Add a record to verify it's not shown
-        record = EmailRecord(sender="x@y.com", subject="Hidden")
-        data_store.add_record(record)
-        response = client.get("/data/import")
-        text = response.data.decode("utf-8")
-        assert "data-table" not in text
-
-    def test_import_page_contains_upload_form(self, client):
-        """Import page should contain the file upload form."""
-        response = client.get("/data/import")
-        text = response.data.decode("utf-8")
-        assert "/data/upload" in text
-
-    def test_import_page_contains_asset_browser(self, client):
-        """Import page should contain asset file listing."""
-        response = client.get("/data/import")
-        text = response.data.decode("utf-8")
-        assert "/data/import-assets" in text or "assets" in text.lower()
-
-
 class TestUpload:
     """Test POST /data/upload route."""
 
     def test_upload_valid_eml_file(self, client):
-        """Uploading a valid .eml file should redirect to import tab."""
+        """Uploading a valid .eml file should redirect to data page."""
         content = _load_real_eml("assets/ex4/Sv_ Fostira.eml")
 
         response = client.post(
@@ -136,14 +87,14 @@ class TestUpload:
             content_type="multipart/form-data",
         )
 
-        # Should redirect to /data/import
+        # Should redirect to /data/
         assert response.status_code == 302
-        assert "/data/import" in response.headers["Location"]
+        assert "/data/" in response.headers["Location"]
         # Record should be created
         assert len(data_store.get_all_records()) == 1
 
     def test_upload_invalid_file(self, client):
-        """Uploading a non-.eml file should redirect to import tab with error."""
+        """Uploading a non-.eml file should redirect to data page with error."""
         response = client.post(
             "/data/upload",
             data={"files": (BytesIO(b"not an email"), "document.pdf")},
@@ -151,7 +102,7 @@ class TestUpload:
         )
 
         assert response.status_code == 302
-        assert "/data/import" in response.headers["Location"]
+        assert "/data/" in response.headers["Location"]
         assert len(data_store.get_all_records()) == 0
 
 
@@ -159,14 +110,14 @@ class TestImportAssets:
     """Test POST /data/import-assets route."""
 
     def test_import_valid_asset_file(self, client):
-        """Importing a valid asset .eml file should redirect to import tab."""
+        """Importing a valid asset .eml file should redirect to data page."""
         response = client.post(
             "/data/import-assets",
             data={"asset_files": "assets/ex4/Sv_ Fostira.eml"},
         )
 
         assert response.status_code == 302
-        assert "/data/import" in response.headers["Location"]
+        assert "/data/" in response.headers["Location"]
         assert len(data_store.get_all_records()) == 1
 
 

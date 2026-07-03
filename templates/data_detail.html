@@ -8,37 +8,30 @@
 
     <h1>{{ record.subject or '(inget ämne)' }}</h1>
 
-    <!-- Sub-navigation -->
-    <nav class="sub-nav">
-        <a href="{{ url_for('data.data_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'emails' }}">E-post</a>
-        <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
-    </nav>
+    <!-- Flash messages -->
+    {% with messages = get_flashed_messages(with_categories=true) %}
+    {% if messages %}
+    <div class="flash-messages">
+        {% for category, message in messages %}
+        <div class="alert alert-{{ category }}">{{ message }}</div>
+        {% endfor %}
+    </div>
+    {% endif %}
+    {% endwith %}
 
-    <form action="{{ url_for('data.update_record', record_id=record.id) }}" method="post" class="record-detail">
-
-        <!-- Flash messages -->
-        {% with messages = get_flashed_messages(with_categories=true) %}
-        {% if messages %}
-        <div class="flash-messages">
-            {% for category, message in messages %}
-            <div class="alert alert-{{ category }}">{{ message }}</div>
-            {% endfor %}
-        </div>
-        {% endif %}
-        {% endwith %}
-
+    <div class="record-detail">
         <table class="detail-table">
             <tr>
+                <th>Ämne</th>
+                <td><input type="text" id="field-subject" value="{{ record.subject }}" class="detail-input"></td>
+            </tr>
+            <tr>
                 <th>Avsändare</th>
-                <td><input type="text" name="sender" value="{{ record.sender }}" class="detail-input"></td>
+                <td><input type="text" id="field-sender" value="{{ record.sender }}" class="detail-input"></td>
             </tr>
             <tr>
                 <th>Mottagare</th>
-                <td><input type="text" name="recipient" value="{{ record.recipient }}" class="detail-input"></td>
-            </tr>
-            <tr>
-                <th>Ämne</th>
-                <td><input type="text" name="subject" value="{{ record.subject }}" class="detail-input"></td>
+                <td><input type="text" id="field-recipient" value="{{ record.recipient }}" class="detail-input"></td>
             </tr>
             <tr>
                 <th>Datum</th>
@@ -55,18 +48,18 @@
                     <ul class="attachment-list" id="attachment-list">
                         {% for att in record.attachments %}
                         <li class="attachment-item" id="att-{{ att.id }}">
+                            {% if att.filename.lower().endswith('.pdf') and att.id %}
+                            <input type="checkbox" class="plan-checkbox" data-att-id="{{ att.id }}">
+                            {% endif %}
                             {% if att.file_path and att.id %}
                             <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
                             {% else %}
                             {{ att.filename }}
                             {% endif %}
                             <span class="text-muted">({{ att.content_type }})</span>
-                            {% if att.filename.lower().endswith('.pdf') and att.id %}
-                            <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-secondary btn-sm">Plan</a>
-                            {% endif %}
                             {% if att.id %}
                             <button type="button" class="btn btn-icon btn-icon-sm btn-danger-ghost" title="Markera för borttagning"
-                                onclick="markAttachmentForDeletion({{ att.id }})">
+                                data-delete-att="{{ att.id }}">
                                 <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                                     <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
                                 </svg>
@@ -75,6 +68,15 @@
                         </li>
                         {% endfor %}
                     </ul>
+
+                    <div class="attachment-actions">
+                        <button type="button" class="btn btn-secondary" onclick="exportToPlan()" title="Exportera valda PDF-bilagor till Plan">
+                            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                                <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="12" y2="12"/><line x1="15" y1="15" x2="12" y2="12"/>
+                            </svg>
+                            Exportera till Plan
+                        </button>
+                    </div>
                     {% else %}
                     <span class="text-muted">Inga bilagor</span>
                     {% endif %}
@@ -83,53 +85,103 @@
         </table>
 
         <h2>Meddelandetext</h2>
-        <textarea name="body_text" class="body-text-edit" rows="10">{{ record.body_text or '' }}</textarea>
-
-        <!-- Hidden container for attachment IDs marked for deletion -->
-        <div id="delete-attachments-container"></div>
+        <textarea id="field-body-text" class="body-text-edit" rows="10">{{ record.body_text or '' }}</textarea>
 
         <!-- Action buttons -->
         <div class="detail-actions">
-            <button type="submit" class="btn btn-primary" title="Spara alla ändringar">
+            <button type="button" class="btn btn-primary" onclick="saveRecord()" title="Spara alla ändringar">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
                     <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
                 </svg>
                 Spara
             </button>
+            <button type="button" class="btn btn-icon btn-danger" onclick="deleteRecord()" title="Ta bort e-post">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                </svg>
+                Ta bort
+            </button>
         </div>
-    </form>
-
-    <form action="{{ url_for('data.delete_record', record_id=record.id) }}" method="post" class="delete-form">
-        <button type="submit" class="btn btn-icon btn-danger" onclick="return confirm('Är du säker på att du vill ta bort hela detta e-postmeddelande?')" title="Ta bort e-post">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
-                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
-            </svg>
-            Ta bort e-post
-        </button>
-    </form>
+    </div>
 </div>
 
 <script>
-function markAttachmentForDeletion(attachmentId) {
-    const item = document.getElementById('att-' + attachmentId);
-    if (!item) return;
+const RECORD_ID = "{{ record.id }}";
+const deleteAttachmentIds = new Set();
 
-    // Toggle marked state
-    if (item.classList.contains('marked-for-deletion')) {
-        // Unmark
-        item.classList.remove('marked-for-deletion');
-        const hidden = document.querySelector(`input[name="delete_attachments"][value="${attachmentId}"]`);
-        if (hidden) hidden.remove();
-    } else {
-        // Mark for deletion
-        item.classList.add('marked-for-deletion');
-        const container = document.getElementById('delete-attachments-container');
+// Mark/unmark attachment for deletion
+document.querySelectorAll('[data-delete-att]').forEach(btn => {
+    btn.addEventListener('click', function() {
+        const attId = this.dataset.deleteAtt;
+        const item = document.getElementById('att-' + attId);
+        if (item.classList.contains('marked-for-deletion')) {
+            item.classList.remove('marked-for-deletion');
+            deleteAttachmentIds.delete(attId);
+        } else {
+            item.classList.add('marked-for-deletion');
+            deleteAttachmentIds.add(attId);
+        }
+    });
+});
+
+// Save record (text fields + delete marked attachments)
+function saveRecord() {
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/data/record/${RECORD_ID}/update`;
+
+    function addField(name, value) {
         const input = document.createElement('input');
         input.type = 'hidden';
-        input.name = 'delete_attachments';
-        input.value = attachmentId;
-        container.appendChild(input);
+        input.name = name;
+        input.value = value;
+        form.appendChild(input);
     }
+
+    addField('subject', document.getElementById('field-subject').value);
+    addField('sender', document.getElementById('field-sender').value);
+    addField('recipient', document.getElementById('field-recipient').value);
+    addField('body_text', document.getElementById('field-body-text').value);
+
+    deleteAttachmentIds.forEach(id => addField('delete_attachments', id));
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Export selected PDFs to Plan
+function exportToPlan() {
+    const checked = document.querySelectorAll('.plan-checkbox:checked');
+    if (checked.length === 0) {
+        alert('Välj minst en PDF-bilaga att exportera.');
+        return;
+    }
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/data/record/${RECORD_ID}/export-to-plan`;
+
+    checked.forEach(cb => {
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'plan_attachment_ids';
+        input.value = cb.dataset.attId;
+        form.appendChild(input);
+    });
+
+    document.body.appendChild(form);
+    form.submit();
+}
+
+// Delete entire record
+function deleteRecord() {
+    if (!confirm('Är du säker på att du vill ta bort hela detta e-postmeddelande?')) return;
+
+    const form = document.createElement('form');
+    form.method = 'POST';
+    form.action = `/data/record/${RECORD_ID}/delete`;
+    document.body.appendChild(form);
+    form.submit();
 }
 </script>
 {% endblock %}

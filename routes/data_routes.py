@@ -58,9 +58,10 @@ def validate_annotation_data(data):
 
 @data_bp.route("/")
 def data_index():
-    """Render the E-post sub-tab with records table only."""
+    """Render the Data page with records table and import controls."""
     records = data_store.get_all_records()
-    return render_template("data_emails.html", records=records, active_tab="emails")
+    asset_files = import_handler.list_asset_eml_files()
+    return render_template("data_emails.html", records=records, asset_files=asset_files, active_tab="emails")
 
 
 @data_bp.route("/import")
@@ -77,7 +78,7 @@ def upload():
 
     if not files or all(f.filename == "" for f in files):
         flash("No files selected for upload.", "error")
-        return redirect(url_for("data.import_index"))
+        return redirect(url_for("data.data_index"))
 
     result = import_handler.import_uploaded_files(files)
 
@@ -88,7 +89,7 @@ def upload():
     for err in result.errors:
         flash(f"Error importing {err.filename}: {err.message}", "error")
 
-    return redirect(url_for("data.import_index"))
+    return redirect(url_for("data.data_index"))
 
 
 @data_bp.route("/import-assets", methods=["POST"])
@@ -98,7 +99,7 @@ def import_assets():
 
     if not file_paths:
         flash("No asset files selected for import.", "error")
-        return redirect(url_for("data.import_index"))
+        return redirect(url_for("data.data_index"))
 
     result = import_handler.import_from_assets(file_paths)
 
@@ -110,7 +111,7 @@ def import_assets():
     for err in result.errors:
         flash(f"Error importing {err.filename}: {err.message}", "error")
 
-    return redirect(url_for("data.import_index"))
+    return redirect(url_for("data.data_index"))
 
 
 @data_bp.route("/record/<record_id>")
@@ -220,6 +221,34 @@ def delete_attachment(record_id, attachment_id):
     return jsonify({"success": True})
 
 
+@data_bp.route("/record/<record_id>/export-to-plan", methods=["POST"])
+def export_to_plan(record_id):
+    """Mark selected PDF attachments as exported to Plan."""
+    record = data_store.get_record(record_id)
+    if record is None:
+        abort(404)
+
+    attachment_ids = request.form.getlist("plan_attachment_ids")
+    if not attachment_ids:
+        flash("Inga bilagor valda.", "error")
+        return redirect(url_for("data.record_detail", record_id=record_id))
+
+    count = 0
+    for att_id_str in attachment_ids:
+        try:
+            att_id = int(att_id_str)
+        except (ValueError, TypeError):
+            continue
+        att = db.session.get(AttachmentModel, att_id)
+        if att and att.email_record_id == record_id:
+            att.in_plan = True
+            count += 1
+
+    db.session.commit()
+    flash(f"{count} bilaga(or) exporterade till Plan.", "success")
+    return redirect(url_for("data.record_detail", record_id=record_id))
+
+
 @data_bp.route("/manual")
 def manual_form():
     """Render the manual entry form."""
@@ -228,7 +257,7 @@ def manual_form():
 
 @data_bp.route("/manual", methods=["POST"])
 def manual_submit():
-    """Validate and submit manual entry."""
+    """Validate and submit manual entry with optional file attachments."""
     form_data = {
         "sender": request.form.get("sender", "").strip(),
         "recipient": request.form.get("recipient", "").strip(),
@@ -256,6 +285,23 @@ def manual_submit():
         except (ValueError, TypeError):
             record_date = None
 
+    # Handle file attachments
+    from models import Attachment
+    from attachment_store import save_attachments
+
+    attachments = []
+    uploaded_files = request.files.getlist("attachments")
+    for f in uploaded_files:
+        if f.filename and f.filename != "":
+            content = f.read()
+            attachments.append(
+                Attachment(
+                    filename=f.filename,
+                    content_type=f.content_type or "application/octet-stream",
+                    content=content,
+                )
+            )
+
     record = EmailRecord(
         sender=form_data["sender"],
         recipient=form_data["recipient"],
@@ -263,11 +309,16 @@ def manual_submit():
         date=record_date,
         body_text=form_data["body_text"],
         source_file="manual entry",
+        attachments=attachments,
     )
+
+    # Save attachment files to disk
+    if attachments:
+        save_attachments(record.id, record.attachments, current_app.instance_path)
 
     data_store.add_record(record)
     flash("Record added successfully.", "success")
-    return redirect(url_for("data.import_index"))
+    return redirect(url_for("data.data_index"))
 
 
 @data_bp.route("/record/<record_id>/analyze", methods=["POST"])
@@ -574,19 +625,29 @@ def delete_annotation(annotation_id):
 
 @data_bp.route("/plan")
 def plan_index():
-    """Render the Plan sub-tab listing emails with PDF attachments."""
-    # Query email records that have at least one PDF attachment
-    records_with_pdfs = (
-        db.session.query(EmailRecordModel)
-        .join(AttachmentModel, EmailRecordModel.id == AttachmentModel.email_record_id)
+    """Render the Plan tab listing PDFs exported to plan, grouped by email."""
+    # Query attachments marked in_plan, grouped by email
+    plan_attachments = (
+        db.session.query(AttachmentModel)
+        .filter(AttachmentModel.in_plan == True)
         .filter(AttachmentModel.filename.ilike("%.pdf"))
-        .distinct()
         .all()
     )
 
+    # Group by email record
+    grouped = {}
+    for att in plan_attachments:
+        email = att.email_record
+        if email.id not in grouped:
+            grouped[email.id] = {
+                "email": email,
+                "attachments": [],
+            }
+        grouped[email.id]["attachments"].append(att)
+
     return render_template(
         "data_plan.html",
-        records=records_with_pdfs,
+        grouped=grouped,
         active_tab="plan",
     )
 

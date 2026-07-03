@@ -44,6 +44,13 @@ def create_app() -> Flask:
                     )
                 )
                 conn.commit()
+            if "in_plan" not in columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE attachments ADD COLUMN in_plan BOOLEAN NOT NULL DEFAULT 0"
+                    )
+                )
+                conn.commit()
 
     # Register the Data Tab blueprint
     from routes.data_routes import data_bp
