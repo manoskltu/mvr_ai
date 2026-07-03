@@ -165,6 +165,61 @@ def delete_record(record_id):
     return redirect(url_for("data.data_index"))
 
 
+@data_bp.route("/record/<record_id>/update", methods=["POST"])
+def update_record(record_id):
+    """Update an email record's editable fields and delete marked attachments."""
+    from db_models import EmailRecordModel
+
+    orm_record = db.session.get(EmailRecordModel, record_id)
+    if orm_record is None:
+        abort(404)
+
+    # Update text fields
+    orm_record.sender = request.form.get("sender", "").strip()
+    orm_record.recipient = request.form.get("recipient", "").strip()
+    orm_record.subject = request.form.get("subject", "").strip()
+    orm_record.body_text = request.form.get("body_text", "")
+
+    # Delete marked attachments
+    delete_ids = request.form.getlist("delete_attachments")
+    for att_id_str in delete_ids:
+        try:
+            att_id = int(att_id_str)
+        except (ValueError, TypeError):
+            continue
+        att = db.session.get(AttachmentModel, att_id)
+        if att and att.email_record_id == record_id:
+            # Delete file from disk
+            if att.file_path:
+                full_path = get_attachment_full_path(att.file_path, current_app.instance_path)
+                if os.path.isfile(full_path):
+                    os.remove(full_path)
+            db.session.delete(att)
+
+    db.session.commit()
+
+    flash("Ändringarna har sparats.", "success")
+    return redirect(url_for("data.record_detail", record_id=record_id))
+
+
+@data_bp.route("/record/<record_id>/attachment/<int:attachment_id>/delete", methods=["POST"])
+def delete_attachment(record_id, attachment_id):
+    """Delete a single attachment from a record."""
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None or att.email_record_id != record_id:
+        abort(404)
+
+    # Delete file from disk
+    if att.file_path:
+        full_path = get_attachment_full_path(att.file_path, current_app.instance_path)
+        if os.path.isfile(full_path):
+            os.remove(full_path)
+
+    db.session.delete(att)
+    db.session.commit()
+    return jsonify({"success": True})
+
+
 @data_bp.route("/manual")
 def manual_form():
     """Render the manual entry form."""

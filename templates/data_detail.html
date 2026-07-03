@@ -14,15 +14,31 @@
         <a href="{{ url_for('data.import_index') }}" class="sub-nav-link {{ 'active' if active_tab == 'import' }}">Import</a>
     </nav>
 
-    <div class="record-detail">
+    <form action="{{ url_for('data.update_record', record_id=record.id) }}" method="post" class="record-detail">
+
+        <!-- Flash messages -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-messages">
+            {% for category, message in messages %}
+            <div class="alert alert-{{ category }}">{{ message }}</div>
+            {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+
         <table class="detail-table">
             <tr>
                 <th>Avsändare</th>
-                <td>{{ record.sender }}</td>
+                <td><input type="text" name="sender" value="{{ record.sender }}" class="detail-input"></td>
             </tr>
             <tr>
                 <th>Mottagare</th>
-                <td>{{ record.recipient }}</td>
+                <td><input type="text" name="recipient" value="{{ record.recipient }}" class="detail-input"></td>
+            </tr>
+            <tr>
+                <th>Ämne</th>
+                <td><input type="text" name="subject" value="{{ record.subject }}" class="detail-input"></td>
             </tr>
             <tr>
                 <th>Datum</th>
@@ -36,9 +52,9 @@
                 <th>Bilagor ({{ record.attachments | length }})</th>
                 <td>
                     {% if record.attachments %}
-                    <ul class="attachment-list">
+                    <ul class="attachment-list" id="attachment-list">
                         {% for att in record.attachments %}
-                        <li>
+                        <li class="attachment-item" id="att-{{ att.id }}">
                             {% if att.file_path and att.id %}
                             <a href="{{ url_for('data.download_attachment', record_id=record.id, attachment_id=att.id) }}">{{ att.filename }}</a>
                             {% else %}
@@ -47,6 +63,14 @@
                             <span class="text-muted">({{ att.content_type }})</span>
                             {% if att.filename.lower().endswith('.pdf') and att.id %}
                             <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-secondary btn-sm">Plan</a>
+                            {% endif %}
+                            {% if att.id %}
+                            <button type="button" class="btn btn-icon btn-icon-sm btn-danger-ghost" title="Markera för borttagning"
+                                onclick="markAttachmentForDeletion({{ att.id }})">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                </svg>
+                            </button>
                             {% endif %}
                         </li>
                         {% endfor %}
@@ -59,11 +83,53 @@
         </table>
 
         <h2>Meddelandetext</h2>
-        <pre class="body-text">{{ record.body_text or '(tomt meddelande)' }}</pre>
+        <textarea name="body_text" class="body-text-edit" rows="10">{{ record.body_text or '' }}</textarea>
 
-        <form action="{{ url_for('data.delete_record', record_id=record.id) }}" method="post" class="delete-form">
-            <button type="submit" class="btn btn-danger" onclick="return confirm('Är du säker på att du vill ta bort denna post?')">Ta bort</button>
-        </form>
-    </div>
+        <!-- Hidden container for attachment IDs marked for deletion -->
+        <div id="delete-attachments-container"></div>
+
+        <!-- Action buttons -->
+        <div class="detail-actions">
+            <button type="submit" class="btn btn-primary" title="Spara alla ändringar">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/>
+                </svg>
+                Spara
+            </button>
+        </div>
+    </form>
+
+    <form action="{{ url_for('data.delete_record', record_id=record.id) }}" method="post" class="delete-form">
+        <button type="submit" class="btn btn-icon btn-danger" onclick="return confirm('Är du säker på att du vill ta bort hela detta e-postmeddelande?')" title="Ta bort e-post">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: -2px; margin-right: 4px;">
+                <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+            </svg>
+            Ta bort e-post
+        </button>
+    </form>
 </div>
+
+<script>
+function markAttachmentForDeletion(attachmentId) {
+    const item = document.getElementById('att-' + attachmentId);
+    if (!item) return;
+
+    // Toggle marked state
+    if (item.classList.contains('marked-for-deletion')) {
+        // Unmark
+        item.classList.remove('marked-for-deletion');
+        const hidden = document.querySelector(`input[name="delete_attachments"][value="${attachmentId}"]`);
+        if (hidden) hidden.remove();
+    } else {
+        // Mark for deletion
+        item.classList.add('marked-for-deletion');
+        const container = document.getElementById('delete-attachments-container');
+        const input = document.createElement('input');
+        input.type = 'hidden';
+        input.name = 'delete_attachments';
+        input.value = attachmentId;
+        container.appendChild(input);
+    }
+}
+</script>
 {% endblock %}
