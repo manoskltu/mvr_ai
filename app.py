@@ -52,6 +52,17 @@ def create_app() -> Flask:
                 )
                 conn.commit()
 
+            # Migration: add group_id column to annotations if missing (for existing databases)
+            result2 = conn.execute(text("PRAGMA table_info(annotations)"))
+            annotation_columns = [row[1] for row in result2]
+            if "group_id" not in annotation_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE annotations ADD COLUMN group_id INTEGER REFERENCES annotation_groups(id) ON DELETE SET NULL"
+                    )
+                )
+                conn.commit()
+
     # Register the Data Tab blueprint
     from routes.data_routes import data_bp
 

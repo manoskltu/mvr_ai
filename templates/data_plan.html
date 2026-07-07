@@ -18,8 +18,21 @@
                 </button>
                 <ul class="plan-group-list">
                     {% for att in group.attachments %}
-                    <li>
+                    <li class="plan-item">
                         <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}">{{ att.filename }}</a>
+                        <span class="plan-item-actions">
+                            <a href="{{ url_for('data.plan_editor', attachment_id=att.id) }}" class="btn btn-icon btn-icon-sm btn-ghost" title="Redigera">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M17 3a2.85 2.83 0 1 1 4 4L7.5 20.5 2 22l1.5-5.5Z"/><path d="m15 5 4 4"/>
+                                </svg>
+                            </a>
+                            <button type="button" class="btn btn-icon btn-icon-sm btn-danger-ghost" title="Ta bort från Plan"
+                                onclick="removeFromPlan({{ att.id }})">
+                                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M3 6h18"/><path d="M19 6v14c0 1-1 2-2 2H7c-1 0-2-1-2-2V6"/><path d="M8 6V4c0-1 1-2 2-2h4c1 0 2 1 2 2v2"/>
+                                </svg>
+                            </button>
+                        </span>
                     </li>
                     {% endfor %}
                 </ul>
@@ -43,6 +56,20 @@ function togglePlanGroup(btn) {
     } else {
         list.style.display = 'none';
         arrow.style.transform = 'rotate(-90deg)';
+    }
+}
+
+async function removeFromPlan(attachmentId) {
+    if (!confirm('Ta bort denna ritning från Plan?')) return;
+    try {
+        const response = await fetch(`/data/plan/${attachmentId}/remove`, { method: 'POST' });
+        if (response.ok) {
+            location.reload();
+        } else {
+            alert('Kunde inte ta bort från Plan.');
+        }
+    } catch (err) {
+        alert('Kunde inte ta bort från Plan.');
     }
 }
 </script>

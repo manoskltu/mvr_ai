@@ -5,6 +5,7 @@ managing email records. Split into sub-tabs: E-post (records), Import, and Analy
 """
 
 import os
+import re
 from datetime import datetime
 
 from flask import (
@@ -19,11 +20,12 @@ from flask import (
     send_file,
     url_for,
 )
+from sqlalchemy import func
 
 import data_store
 import import_handler
 from attachment_store import get_attachment_full_path
-from db_models import AnalysisResultModel, AnnotationModel, AttachmentModel, EmailRecordModel, db
+from db_models import AnalysisResultModel, AnnotationGroupModel, AnnotationModel, AttachmentModel, EmailRecordModel, db
 from models import EmailRecord
 from analysis.analysis_pipeline import run_analysis, serialize_result, deserialize_result
 from analysis.config import get_analysis_config
@@ -54,6 +56,61 @@ def validate_annotation_data(data):
     if page < 1:
         return None, "page_number must be >= 1"
     return {"attachment_id": att_id, "page_number": page, "x": x, "y": y, "width": w, "height": h}, None
+
+
+def validate_hex_color(color: str) -> bool:
+    """Return True if color matches #RRGGBB format (6 hex chars after #)."""
+    return bool(re.fullmatch(r"#[0-9A-Fa-f]{6}", color))
+
+
+def validate_group_data(data, attachment_id=None, group_id=None):
+    """Validate group create/update request body.
+
+    Checks: name is non-empty string, color is valid hex (#RRGGBB),
+    attachment_id exists, name is unique per attachment.
+
+    Returns (validated_data, None) on success or (None, error_message) on failure.
+    """
+    validated = {}
+
+    # Validate name if provided
+    if "name" in data:
+        name = data["name"]
+        if not isinstance(name, str) or not name.strip():
+            return None, "Group name cannot be empty"
+        validated["name"] = name.strip()
+
+    # Validate color if provided
+    if "color" in data:
+        color = data["color"]
+        if not isinstance(color, str) or not validate_hex_color(color):
+            return None, "Invalid color format. Use #RRGGBB"
+        validated["color"] = color
+
+    # Validate display_order if provided
+    if "display_order" in data:
+        try:
+            validated["display_order"] = int(data["display_order"])
+        except (ValueError, TypeError):
+            return None, "Invalid display_order value"
+
+    # Validate attachment_id if provided
+    if attachment_id is not None:
+        att = db.session.get(AttachmentModel, attachment_id)
+        if att is None:
+            return None, "Attachment not found"
+
+    # Check name uniqueness per attachment
+    if "name" in validated and attachment_id is not None:
+        query = AnnotationGroupModel.query.filter_by(
+            attachment_id=attachment_id, name=validated["name"]
+        )
+        if group_id is not None:
+            query = query.filter(AnnotationGroupModel.id != group_id)
+        if query.first() is not None:
+            return None, "A group with this name already exists"
+
+    return validated, None
 
 
 @data_bp.route("/")
@@ -516,6 +573,9 @@ def get_annotations(attachment_id, page_number):
     ).all()
     result = []
     for ann in annotations:
+        group_color = None
+        if ann.group_id is not None and ann.group is not None:
+            group_color = ann.group.color
         result.append({
             "id": ann.id,
             "attachment_id": ann.attachment_id,
@@ -524,6 +584,8 @@ def get_annotations(attachment_id, page_number):
             "y": ann.y,
             "width": ann.width,
             "height": ann.height,
+            "group_id": ann.group_id,
+            "group_color": group_color,
             "created_at": ann.created_at.isoformat() if ann.created_at else None,
         })
     return jsonify(result)
@@ -542,6 +604,21 @@ def create_annotation():
     if att is None:
         abort(404)
 
+    # Handle optional group_id
+    group_id = data.get("group_id")
+    group_color = None
+    if group_id is not None:
+        try:
+            group_id = int(group_id)
+        except (ValueError, TypeError):
+            return jsonify({"error": "Invalid group_id"}), 400
+        group = db.session.get(AnnotationGroupModel, group_id)
+        if group is None:
+            return jsonify({"error": "Group not found"}), 404
+        if group.attachment_id != validated["attachment_id"]:
+            return jsonify({"error": "Group does not belong to the same attachment"}), 400
+        group_color = group.color
+
     ann = AnnotationModel(
         attachment_id=validated["attachment_id"],
         page_number=validated["page_number"],
@@ -549,6 +626,7 @@ def create_annotation():
         y=validated["y"],
         width=validated["width"],
         height=validated["height"],
+        group_id=group_id,
     )
     db.session.add(ann)
     db.session.commit()
@@ -561,6 +639,8 @@ def create_annotation():
         "y": ann.y,
         "width": ann.width,
         "height": ann.height,
+        "group_id": ann.group_id,
+        "group_color": group_color,
         "created_at": ann.created_at.isoformat() if ann.created_at else None,
     }), 201
 
@@ -621,6 +701,222 @@ def delete_annotation(annotation_id):
     return jsonify({"success": True})
 
 
+@data_bp.route("/api/annotations/<int:attachment_id>/unassigned", methods=["DELETE"])
+def delete_unassigned_annotations(attachment_id):
+    """Delete all annotations without a group for the given attachment.
+
+    Returns 200 with count of deleted annotations.
+    """
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+
+    count = AnnotationModel.query.filter_by(
+        attachment_id=attachment_id, group_id=None
+    ).delete()
+    db.session.commit()
+
+    return jsonify({"success": True, "deleted_count": count})
+
+
+# --- Groups CRUD API (Task 2.1) ---
+
+@data_bp.route("/api/groups/<int:attachment_id>")
+def get_groups(attachment_id):
+    """Get all annotation groups for an attachment, ordered by display_order.
+
+    Each group includes an annotation_count field.
+    Returns 404 if attachment doesn't exist.
+    """
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+
+    groups = AnnotationGroupModel.query.filter_by(
+        attachment_id=attachment_id
+    ).order_by(AnnotationGroupModel.display_order).all()
+
+    result = []
+    for group in groups:
+        annotation_count = AnnotationModel.query.filter_by(group_id=group.id).count()
+        result.append({
+            "id": group.id,
+            "attachment_id": group.attachment_id,
+            "name": group.name,
+            "color": group.color,
+            "display_order": group.display_order,
+            "created_at": group.created_at.isoformat() if group.created_at else None,
+            "annotation_count": annotation_count,
+        })
+
+    return jsonify(result)
+
+
+@data_bp.route("/api/groups", methods=["POST"])
+def create_group():
+    """Create a new annotation group.
+
+    Accepts JSON body with attachment_id (required), name (required), color (optional).
+    Auto-assigns display_order as max(display_order)+1 for the attachment.
+    Returns 201 with created group including annotation_count=0.
+    """
+    data = request.get_json(force=True)
+
+    # attachment_id is required
+    if "attachment_id" not in data:
+        return jsonify({"error": "Missing required field: attachment_id"}), 400
+
+    try:
+        attachment_id = int(data["attachment_id"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid attachment_id"}), 400
+
+    # Check attachment exists
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+
+    # name is required for creation
+    if "name" not in data:
+        return jsonify({"error": "Group name cannot be empty"}), 400
+
+    validated, error = validate_group_data(data, attachment_id=attachment_id)
+    if error:
+        return jsonify({"error": error}), 400
+
+    # Auto-assign display_order as max+1
+    max_order = db.session.query(func.max(AnnotationGroupModel.display_order)).filter_by(
+        attachment_id=attachment_id
+    ).scalar()
+    next_order = (max_order or 0) + 1
+
+    color = validated.get("color", "#3498db")
+
+    group = AnnotationGroupModel(
+        attachment_id=attachment_id,
+        name=validated["name"],
+        color=color,
+        display_order=next_order,
+    )
+    db.session.add(group)
+    db.session.commit()
+
+    return jsonify({
+        "id": group.id,
+        "attachment_id": group.attachment_id,
+        "name": group.name,
+        "color": group.color,
+        "display_order": group.display_order,
+        "created_at": group.created_at.isoformat() if group.created_at else None,
+        "annotation_count": 0,
+    }), 201
+
+
+@data_bp.route("/api/groups/<int:group_id>", methods=["PUT"])
+def update_group(group_id):
+    """Update an annotation group (name, color, display_order).
+
+    Validates name uniqueness (excluding self) and color format.
+    Returns 200 with updated group. Returns 404 if group not found, 400 for invalid data.
+    """
+    group = db.session.get(AnnotationGroupModel, group_id)
+    if group is None:
+        abort(404)
+
+    data = request.get_json(force=True)
+
+    validated, error = validate_group_data(
+        data, attachment_id=group.attachment_id, group_id=group_id
+    )
+    if error:
+        return jsonify({"error": error}), 400
+
+    # Apply validated updates
+    if "name" in validated:
+        group.name = validated["name"]
+    if "color" in validated:
+        group.color = validated["color"]
+    if "display_order" in validated:
+        group.display_order = validated["display_order"]
+
+    db.session.commit()
+
+    annotation_count = AnnotationModel.query.filter_by(group_id=group.id).count()
+
+    return jsonify({
+        "id": group.id,
+        "attachment_id": group.attachment_id,
+        "name": group.name,
+        "color": group.color,
+        "display_order": group.display_order,
+        "created_at": group.created_at.isoformat() if group.created_at else None,
+        "annotation_count": annotation_count,
+    })
+
+
+@data_bp.route("/api/groups/<int:group_id>", methods=["DELETE"])
+def delete_group(group_id):
+    """Delete an annotation group.
+
+    SQLAlchemy FK SET NULL handles unassigning annotations.
+    Returns 200 with {"success": true}. Returns 404 if group not found.
+    """
+    group = db.session.get(AnnotationGroupModel, group_id)
+    if group is None:
+        abort(404)
+
+    # Manually unassign annotations since SQLite may not enforce ON DELETE SET NULL
+    AnnotationModel.query.filter_by(group_id=group_id).update({"group_id": None})
+    db.session.delete(group)
+    db.session.commit()
+
+    return jsonify({"success": True})
+
+
+@data_bp.route("/api/annotations/<int:annotation_id>/group", methods=["PATCH"])
+def assign_annotation_group(annotation_id):
+    """Assign or unassign an annotation to/from a group.
+
+    Accepts JSON body: {"group_id": <int>} or {"group_id": null}.
+    Validates annotation exists (404), group exists (404 if non-null),
+    and group belongs to same attachment as annotation (400 if mismatch).
+    Returns 200 with annotation JSON including group_id and group_color.
+    """
+    ann = db.session.get(AnnotationModel, annotation_id)
+    if ann is None:
+        abort(404)
+
+    data = request.get_json(force=True)
+    group_id = data.get("group_id")
+
+    group_color = None
+    if group_id is not None:
+        # Validate group exists
+        group = db.session.get(AnnotationGroupModel, group_id)
+        if group is None:
+            abort(404)
+        # Validate group belongs to same attachment
+        if group.attachment_id != ann.attachment_id:
+            return jsonify({"error": "Group does not belong to the same attachment"}), 400
+        group_color = group.color
+
+    ann.group_id = group_id
+    db.session.commit()
+
+    return jsonify({
+        "id": ann.id,
+        "attachment_id": ann.attachment_id,
+        "page_number": ann.page_number,
+        "x": ann.x,
+        "y": ann.y,
+        "width": ann.width,
+        "height": ann.height,
+        "group_id": ann.group_id,
+        "group_color": group_color,
+        "created_at": ann.created_at.isoformat() if ann.created_at else None,
+    })
+
+
 # --- Plan Tab Listing (Task 5.1) ---
 
 @data_bp.route("/plan")
@@ -668,3 +964,14 @@ def plan_editor(attachment_id):
         attachment=att,
         active_tab="plan",
     )
+
+
+@data_bp.route("/plan/<int:attachment_id>/remove", methods=["POST"])
+def remove_from_plan(attachment_id):
+    """Remove a PDF attachment from the Plan (unmark in_plan)."""
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+    att.in_plan = False
+    db.session.commit()
+    return jsonify({"success": True})

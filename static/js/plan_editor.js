@@ -24,6 +24,9 @@ const state = {
     resizeHandle: null,      // 'nw' | 'ne' | 'sw' | 'se'
     dragAnnotation: null,    // annotation being moved/resized
     originalAnnotation: null, // snapshot for rollback
+    groups: [],              // Array of group objects from API
+    activeGroupId: null,     // Group ID for new annotations (selected in panel)
+    hiddenGroupIds: new Set(), // Groups toggled invisible (client-side)
 };
 
 // --- Coordinate helpers ---
@@ -105,8 +108,20 @@ function init(attachmentId) {
         render();
     });
 
+    // Wire up "Ny grupp" button
+    const createGroupBtn = document.getElementById('btn-create-group');
+    if (createGroupBtn) {
+        createGroupBtn.addEventListener('click', showCreateGroupInput);
+    }
+
+    // Load visibility state from sessionStorage before rendering groups
+    loadVisibilityState();
+
     // Load first page
     loadPage(1);
+
+    // Fetch groups for this attachment
+    fetchGroups(attachmentId);
 }
 
 function resizeCanvas() {
@@ -184,6 +199,11 @@ function render() {
     ctx.clearRect(0, 0, w, h);
 
     for (const ann of state.annotations) {
+        // Skip annotations belonging to hidden groups
+        if (ann.group_id !== null && ann.group_id !== undefined && state.hiddenGroupIds.has(ann.group_id)) {
+            continue;
+        }
+
         const px = fromRatio(ann.x, w);
         const py = fromRatio(ann.y, h);
         const pw = fromRatio(ann.width, w);
@@ -191,12 +211,21 @@ function render() {
 
         const isSelected = (ann.id === state.selectedId);
 
-        // Fill
-        ctx.fillStyle = isSelected ? 'rgba(52, 152, 219, 0.25)' : 'rgba(52, 152, 219, 0.15)';
+        // Determine color from group or use default
+        const color = ann.group_color || '#3498db';
+
+        // Parse hex color to RGB for alpha fill
+        const r = parseInt(color.slice(1, 3), 16);
+        const g = parseInt(color.slice(3, 5), 16);
+        const b = parseInt(color.slice(5, 7), 16);
+
+        // Fill with semi-transparent group color
+        const fillAlpha = isSelected ? 0.25 : 0.15;
+        ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${fillAlpha})`;
         ctx.fillRect(px, py, pw, ph);
 
-        // Border
-        ctx.strokeStyle = isSelected ? '#2980b9' : '#3498db';
+        // Border with full opacity group color
+        ctx.strokeStyle = color;
         ctx.lineWidth = isSelected ? 2.5 : 1.5;
         ctx.strokeRect(px, py, pw, ph);
 
@@ -204,7 +233,7 @@ function render() {
         if (isSelected) {
             const handleSize = 8;
             const hs = handleSize / 2;
-            ctx.fillStyle = '#2980b9';
+            ctx.fillStyle = color;
             // NW
             ctx.fillRect(px - hs, py - hs, handleSize, handleSize);
             // NE
@@ -302,6 +331,7 @@ function handleMouseDown(e) {
         if (hit) {
             state.selectedId = hit.id;
             render();
+            renderGroupsPanel();
 
             // Start move
             state.isDragging = true;
@@ -313,6 +343,7 @@ function handleMouseDown(e) {
             // Deselect
             state.selectedId = null;
             render();
+            renderGroupsPanel();
         }
     }
 }
@@ -467,6 +498,12 @@ function hitTest(x, y) {
     // Search in reverse order (top-most first)
     for (let i = state.annotations.length - 1; i >= 0; i--) {
         const ann = state.annotations[i];
+
+        // Skip annotations belonging to hidden groups
+        if (ann.group_id !== null && ann.group_id !== undefined && state.hiddenGroupIds.has(ann.group_id)) {
+            continue;
+        }
+
         const px = fromRatio(ann.x, w);
         const py = fromRatio(ann.y, h);
         const pw = fromRatio(ann.width, w);
@@ -540,6 +577,11 @@ async function createAnnotation(ann) {
         height: ann.height,
     };
 
+    // Assign to active group if one is selected
+    if (state.activeGroupId !== null) {
+        body.group_id = state.activeGroupId;
+    }
+
     try {
         const response = await fetch('/data/api/annotations', {
             method: 'POST',
@@ -551,6 +593,7 @@ async function createAnnotation(ann) {
             state.annotations.push(created);
             state.selectedId = created.id;
             render();
+            renderGroupsPanel();
         } else {
             showError('Ändringarna kunde inte sparas');
             render();
@@ -607,6 +650,570 @@ async function deleteAnnotation(id) {
     } catch (err) {
         showError('Ändringarna kunde inte sparas');
     }
+}
+
+// --- Group API communication ---
+
+async function fetchGroups(attachmentId) {
+    try {
+        const response = await fetch(`/data/api/groups/${attachmentId}`);
+        if (response.ok) {
+            state.groups = await response.json();
+            renderGroupsPanel();
+        }
+    } catch (err) {
+        showError('Kunde inte hämta grupper.');
+    }
+}
+
+async function createGroup(name) {
+    const body = {
+        attachment_id: state.attachmentId,
+        name: name,
+    };
+
+    try {
+        const response = await fetch('/data/api/groups', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (response.ok || response.status === 201) {
+            const created = await response.json();
+            state.groups.push(created);
+            renderGroupsPanel();
+        } else {
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Kunde inte skapa grupp.');
+        }
+    } catch (err) {
+        showError('Kunde inte skapa grupp.');
+    }
+}
+
+async function updateGroup(groupId, data) {
+    try {
+        const response = await fetch(`/data/api/groups/${groupId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(data),
+        });
+        if (response.ok) {
+            const updated = await response.json();
+            const idx = state.groups.findIndex(g => g.id === groupId);
+            if (idx !== -1) {
+                state.groups[idx] = updated;
+            }
+            // Update local annotation colors if group color changed
+            if (data.color) {
+                for (const ann of state.annotations) {
+                    if (ann.group_id === groupId) {
+                        ann.group_color = updated.color;
+                    }
+                }
+            }
+            renderGroupsPanel();
+            render();
+        } else {
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Kunde inte spara ändringarna.');
+        }
+    } catch (err) {
+        showError('Kunde inte spara ändringarna.');
+    }
+}
+
+async function deleteGroup(groupId) {
+    if (!confirm('Radera grupp? Annoteringarna behålls men blir otilldelade.')) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/data/api/groups/${groupId}`, {
+            method: 'DELETE',
+        });
+        if (response.ok) {
+            state.groups = state.groups.filter(g => g.id !== groupId);
+            if (state.activeGroupId === groupId) {
+                state.activeGroupId = null;
+            }
+            // Re-fetch annotations to get updated group_id=null
+            await fetchAnnotations(state.attachmentId, state.currentPage);
+            renderGroupsPanel();
+        } else {
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Kunde inte radera grupp.');
+        }
+    } catch (err) {
+        showError('Kunde inte radera grupp.');
+    }
+}
+
+async function assignAnnotationToGroup(annotationId, groupId) {
+    try {
+        const response = await fetch(`/data/api/annotations/${annotationId}/group`, {
+            method: 'PATCH',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ group_id: groupId }),
+        });
+        if (response.ok) {
+            const updated = await response.json();
+            const ann = state.annotations.find(a => a.id === annotationId);
+            if (ann) {
+                ann.group_id = updated.group_id;
+                ann.group_color = updated.group_color;
+            }
+            render();
+            renderGroupsPanel();
+        } else {
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Kunde inte tilldela grupp.');
+        }
+    } catch (err) {
+        showError('Kunde inte tilldela grupp.');
+    }
+}
+
+async function clearUnassignedAnnotations() {
+    const count = state.annotations.filter(a => a.group_id === null || a.group_id === undefined).length;
+    if (count === 0) return;
+
+    if (!confirm(`Radera ${count} otilldelade annotering(ar)?`)) {
+        return;
+    }
+
+    try {
+        const response = await fetch(`/data/api/annotations/${state.attachmentId}/unassigned`, {
+            method: 'DELETE',
+        });
+        if (response.ok) {
+            state.annotations = state.annotations.filter(a => a.group_id !== null && a.group_id !== undefined);
+            state.selectedId = null;
+            render();
+            renderGroupsPanel();
+        } else {
+            showError('Kunde inte radera annoteringar.');
+        }
+    } catch (err) {
+        showError('Kunde inte radera annoteringar.');
+    }
+}
+
+// --- Groups panel rendering ---
+
+function renderGroupsPanel() {
+    const container = document.getElementById('groups-list');
+    if (!container) return;
+
+    container.innerHTML = '';
+
+    if (state.groups.length === 0) {
+        container.innerHTML = '<p class="groups-empty-state">Skapa en grupp för att organisera annoteringarna.</p>';
+        // Still show clear unassigned button even with no groups
+        const unassignedCount = state.annotations.filter(a => a.group_id === null || a.group_id === undefined).length;
+        if (unassignedCount > 0) {
+            const clearBtn = document.createElement('button');
+            clearBtn.className = 'btn btn-sm btn-clear-unassigned';
+            clearBtn.textContent = `Rensa otilldelade (${unassignedCount})`;
+            clearBtn.title = 'Ta bort alla annoteringar utan grupp';
+            clearBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                clearUnassignedAnnotations();
+            });
+            container.appendChild(clearBtn);
+        }
+        return;
+    }
+
+    for (const group of state.groups) {
+        const item = document.createElement('div');
+        item.className = 'group-item';
+        item.dataset.groupId = group.id;
+
+        if (state.activeGroupId === group.id) {
+            item.classList.add('active');
+        }
+        if (state.hiddenGroupIds.has(group.id)) {
+            item.classList.add('hidden');
+        }
+
+        // Visibility toggle
+        const visBtn = document.createElement('button');
+        visBtn.className = 'group-visibility-toggle';
+        visBtn.title = state.hiddenGroupIds.has(group.id) ? 'Visa' : 'Dölj';
+        visBtn.innerHTML = state.hiddenGroupIds.has(group.id)
+            ? '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94"/><path d="M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19"/><line x1="1" y1="1" x2="23" y2="23"/></svg>'
+            : '<svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/><circle cx="12" cy="12" r="3"/></svg>';
+        visBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            toggleGroupVisibility(group.id);
+        });
+
+        // Color indicator
+        const colorIndicator = document.createElement('span');
+        colorIndicator.className = 'group-color-indicator';
+        colorIndicator.style.background = group.color;
+        colorIndicator.addEventListener('click', function (e) {
+            e.stopPropagation();
+            showColorPicker(group.id, colorIndicator);
+        });
+
+        // Group name
+        const nameSpan = document.createElement('span');
+        nameSpan.className = 'group-name';
+        nameSpan.textContent = group.name;
+        nameSpan.addEventListener('dblclick', function (e) {
+            e.stopPropagation();
+            startGroupRename(group.id);
+        });
+
+        // Annotation count badge (computed from local state for real-time updates)
+        const countBadge = document.createElement('span');
+        countBadge.className = 'group-count';
+        const localCount = state.annotations.filter(a => a.group_id === group.id).length;
+        countBadge.textContent = localCount;
+
+        // Delete button
+        const deleteBtn = document.createElement('button');
+        deleteBtn.className = 'group-delete-btn';
+        deleteBtn.title = 'Ta bort';
+        deleteBtn.textContent = '✕';
+        deleteBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            deleteGroup(group.id);
+        });
+
+        item.appendChild(visBtn);
+        item.appendChild(colorIndicator);
+        item.appendChild(nameSpan);
+        item.appendChild(countBadge);
+        item.appendChild(deleteBtn);
+
+        // Assign button when annotation is selected
+        if (state.selectedId !== null) {
+            const assignBtn = document.createElement('button');
+            assignBtn.className = 'group-assign-btn';
+            assignBtn.title = 'Tilldela markerad annotering';
+            assignBtn.textContent = '←';
+            assignBtn.addEventListener('click', function (e) {
+                e.stopPropagation();
+                assignAnnotationToGroup(state.selectedId, group.id);
+            });
+            item.appendChild(assignBtn);
+        }
+
+        // Clicking on the group item body sets active group
+        item.addEventListener('click', function () {
+            setActiveGroup(group.id);
+        });
+
+        container.appendChild(item);
+    }
+
+    // "Clear unassigned" button at the bottom
+    const unassignedCount = state.annotations.filter(a => a.group_id === null || a.group_id === undefined).length;
+    if (unassignedCount > 0) {
+        const clearBtn = document.createElement('button');
+        clearBtn.className = 'btn btn-sm btn-clear-unassigned';
+        clearBtn.textContent = `Rensa otilldelade (${unassignedCount})`;
+        clearBtn.title = 'Ta bort alla annoteringar utan grupp';
+        clearBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            clearUnassignedAnnotations();
+        });
+        container.appendChild(clearBtn);
+    }
+}
+
+// --- Active group selection ---
+
+function setActiveGroup(groupId) {
+    if (state.activeGroupId === groupId) {
+        state.activeGroupId = null;
+    } else {
+        state.activeGroupId = groupId;
+    }
+    renderGroupsPanel();
+}
+
+// --- Inline group rename ---
+
+function startGroupRename(groupId) {
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) return;
+
+    const item = document.querySelector(`.group-item[data-group-id="${groupId}"]`);
+    if (!item) return;
+
+    const nameSpan = item.querySelector('.group-name');
+    if (!nameSpan) return;
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'group-rename-input';
+    input.value = group.name;
+    let saved = false;
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            if (!saved) {
+                saved = true;
+                saveGroupRename(groupId, input.value);
+            }
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            saved = true;
+            cancelGroupRename(groupId);
+        }
+    });
+
+    input.addEventListener('blur', function () {
+        if (!saved) {
+            saved = true;
+            saveGroupRename(groupId, input.value);
+        }
+    });
+
+    nameSpan.replaceWith(input);
+    input.focus();
+    input.select();
+}
+
+function saveGroupRename(groupId, newName) {
+    const group = state.groups.find(g => g.id === groupId);
+    if (!group) {
+        renderGroupsPanel();
+        return;
+    }
+
+    const trimmed = newName.trim();
+    if (trimmed === '' || trimmed === group.name) {
+        renderGroupsPanel();
+        return;
+    }
+
+    // Check for duplicate name locally
+    const duplicate = state.groups.find(g => g.id !== groupId && g.name === trimmed);
+    if (duplicate) {
+        showError('En grupp med det namnet finns redan.');
+        renderGroupsPanel();
+        return;
+    }
+
+    updateGroup(groupId, { name: trimmed });
+}
+
+function cancelGroupRename(groupId) {
+    renderGroupsPanel();
+}
+
+// --- Create group inline input ---
+
+function showCreateGroupInput() {
+    const container = document.getElementById('groups-list');
+    if (!container) return;
+
+    // Remove any existing create input
+    const existing = container.querySelector('.group-create-input');
+    if (existing) existing.remove();
+
+    const inputWrapper = document.createElement('div');
+    inputWrapper.className = 'group-create-input';
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.className = 'group-rename-input';
+    input.placeholder = 'Gruppnamn...';
+    let submitted = false;
+
+    function submitInput() {
+        if (submitted) return;
+        submitted = true;
+        const name = input.value.trim();
+        if (name) {
+            createGroup(name);
+        }
+        inputWrapper.remove();
+    }
+
+    input.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            submitInput();
+        } else if (e.key === 'Escape') {
+            e.preventDefault();
+            submitted = true;
+            inputWrapper.remove();
+        }
+    });
+
+    input.addEventListener('blur', function () {
+        submitInput();
+    });
+
+    inputWrapper.appendChild(input);
+    container.insertBefore(inputWrapper, container.firstChild);
+    input.focus();
+}
+
+// --- Visibility toggle ---
+
+function toggleGroupVisibility(groupId) {
+    if (state.hiddenGroupIds.has(groupId)) {
+        state.hiddenGroupIds.delete(groupId);
+    } else {
+        state.hiddenGroupIds.add(groupId);
+    }
+    saveVisibilityState();
+    render();
+    renderGroupsPanel();
+}
+
+function saveVisibilityState() {
+    sessionStorage.setItem(
+        `groups-visibility-${state.attachmentId}`,
+        JSON.stringify([...state.hiddenGroupIds])
+    );
+}
+
+function loadVisibilityState() {
+    const saved = sessionStorage.getItem(`groups-visibility-${state.attachmentId}`);
+    if (saved) {
+        try {
+            state.hiddenGroupIds = new Set(JSON.parse(saved));
+        } catch (e) {
+            state.hiddenGroupIds = new Set();
+        }
+    }
+}
+
+// --- Color picker component ---
+
+function closeColorPicker() {
+    const existing = document.querySelector('.color-picker-popover');
+    if (existing) existing.remove();
+    // Remove the document-level listeners
+    document.removeEventListener('click', closeColorPickerOnOutsideClick, true);
+    document.removeEventListener('keydown', closeColorPickerOnEscape, true);
+}
+
+function closeColorPickerOnOutsideClick(e) {
+    const picker = document.querySelector('.color-picker-popover');
+    if (picker && !picker.contains(e.target)) {
+        closeColorPicker();
+    }
+}
+
+function closeColorPickerOnEscape(e) {
+    if (e.key === 'Escape') {
+        closeColorPicker();
+    }
+}
+
+function showColorPicker(groupId, anchorElement) {
+    // Close any existing picker first (only one at a time)
+    closeColorPicker();
+
+    const predefinedColors = [
+        '#e74c3c', '#27ae60', '#2980b9', '#f39c12',
+        '#9b59b6', '#1abc9c', '#e67e22', '#34495e',
+    ];
+
+    // Create popover container
+    const popover = document.createElement('div');
+    popover.className = 'color-picker-popover';
+
+    // Swatches grid
+    const swatchGrid = document.createElement('div');
+    swatchGrid.className = 'color-picker-swatches';
+
+    for (const color of predefinedColors) {
+        const swatch = document.createElement('button');
+        swatch.className = 'color-picker-swatch';
+        swatch.style.background = color;
+        swatch.title = color;
+        swatch.addEventListener('click', function (e) {
+            e.stopPropagation();
+            updateGroup(groupId, { color: color });
+            closeColorPicker();
+        });
+        swatchGrid.appendChild(swatch);
+    }
+
+    popover.appendChild(swatchGrid);
+
+    // Custom hex input
+    const hexWrapper = document.createElement('div');
+    hexWrapper.className = 'color-picker-hex-wrapper';
+
+    const hexInput = document.createElement('input');
+    hexInput.type = 'text';
+    hexInput.className = 'color-picker-hex-input';
+    hexInput.placeholder = '#RRGGBB';
+    hexInput.maxLength = 7;
+
+    const hexHint = document.createElement('span');
+    hexHint.className = 'color-picker-hex-hint';
+    hexHint.textContent = '';
+
+    hexInput.addEventListener('keydown', function (e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            e.stopPropagation();
+            const value = hexInput.value.trim();
+            if (/^#[0-9A-Fa-f]{6}$/.test(value)) {
+                updateGroup(groupId, { color: value.toLowerCase() });
+                closeColorPicker();
+            } else {
+                hexHint.textContent = 'Ogiltigt format. Använd #RRGGBB';
+                hexHint.classList.add('visible');
+                setTimeout(() => {
+                    hexHint.textContent = '';
+                    hexHint.classList.remove('visible');
+                }, 3000);
+            }
+        } else if (e.key === 'Escape') {
+            e.stopPropagation();
+            closeColorPicker();
+        }
+    });
+
+    // Prevent click-outside handler from closing picker when clicking inside hex input
+    hexInput.addEventListener('click', function (e) {
+        e.stopPropagation();
+    });
+
+    hexWrapper.appendChild(hexInput);
+    hexWrapper.appendChild(hexHint);
+    popover.appendChild(hexWrapper);
+
+    // Position the popover near/below the anchor element
+    document.body.appendChild(popover);
+
+    const anchorRect = anchorElement.getBoundingClientRect();
+    const popoverRect = popover.getBoundingClientRect();
+
+    let top = anchorRect.bottom + 4;
+    let left = anchorRect.left;
+
+    // Ensure popover doesn't overflow right side of viewport
+    if (left + popoverRect.width > window.innerWidth) {
+        left = window.innerWidth - popoverRect.width - 8;
+    }
+    // Ensure popover doesn't overflow bottom of viewport
+    if (top + popoverRect.height > window.innerHeight) {
+        top = anchorRect.top - popoverRect.height - 4;
+    }
+
+    popover.style.top = top + 'px';
+    popover.style.left = left + 'px';
+
+    // Add outside-click and escape listeners (delay to avoid immediate close from current click)
+    setTimeout(() => {
+        document.addEventListener('click', closeColorPickerOnOutsideClick, true);
+        document.addEventListener('keydown', closeColorPickerOnEscape, true);
+    }, 0);
 }
 
 // --- Mode switching ---

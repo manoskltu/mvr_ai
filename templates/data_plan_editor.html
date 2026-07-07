@@ -72,10 +72,24 @@
         <span>Laddar ritning...</span>
     </div>
 
-    <!-- Editor container -->
-    <div class="plan-editor-container" id="editor-container" data-attachment-id="{{ attachment.id }}" data-record-id="{{ attachment.email_record_id }}">
-        <img id="page-image" src="" alt="PDF-sida">
-        <canvas id="annotation-canvas"></canvas>
+    <!-- Editor layout wrapper -->
+    <div class="plan-editor-layout">
+        <!-- Editor container -->
+        <div class="plan-editor-container" id="editor-container" data-attachment-id="{{ attachment.id }}" data-record-id="{{ attachment.email_record_id }}">
+            <img id="page-image" src="" alt="PDF-sida">
+            <canvas id="annotation-canvas"></canvas>
+        </div>
+
+        <!-- Groups panel -->
+        <div class="groups-panel" id="groups-panel">
+            <div class="groups-panel-header">
+                <h3>Grupper</h3>
+                <button id="btn-create-group" class="btn btn-sm btn-primary" title="Ny grupp">+ Ny grupp</button>
+            </div>
+            <div id="groups-list" class="groups-panel-list">
+                <!-- Dynamically populated by JS -->
+            </div>
+        </div>
     </div>
 </div>
 {% endblock %}

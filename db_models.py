@@ -48,6 +48,30 @@ class AttachmentModel(db.Model):
     in_plan = db.Column(db.Boolean, nullable=False, default=False)
 
 
+class AnnotationGroupModel(db.Model):
+    """Stores named annotation groups for PDF attachments."""
+
+    __tablename__ = "annotation_groups"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    attachment_id = db.Column(
+        db.Integer,
+        db.ForeignKey("attachments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    name = db.Column(db.Text, nullable=False)
+    color = db.Column(db.String(7), nullable=False, default="#3498db")
+    display_order = db.Column(db.Integer, nullable=False, default=0)
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
+
+    attachment = db.relationship("AttachmentModel", backref="annotation_groups")
+    annotations = db.relationship("AnnotationModel", backref="group", lazy="selectin")
+
+    __table_args__ = (
+        db.UniqueConstraint("attachment_id", "name", name="uq_group_name_per_attachment"),
+    )
+
+
 class AnnotationModel(db.Model):
     """Stores rectangle annotations for PDF pages."""
 
@@ -64,6 +88,12 @@ class AnnotationModel(db.Model):
     y = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
     width = db.Column(db.Float, nullable=False)   # ratio 0.0–1.0
     height = db.Column(db.Float, nullable=False)  # ratio 0.0–1.0
+    group_id = db.Column(
+        db.Integer,
+        db.ForeignKey("annotation_groups.id", ondelete="SET NULL"),
+        nullable=True,
+        default=None,
+    )
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
 
     attachment = db.relationship("AttachmentModel", backref="annotations")

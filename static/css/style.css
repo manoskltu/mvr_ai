@@ -582,7 +582,7 @@ ol, ul {
     max-height: 75vh;
     border: 1px solid #dee2e6;
     border-radius: 4px;
-    background: #f0f0f0;
+    background: #ffffff;
 }
 
 /* Detail page editable inputs */
@@ -742,4 +742,340 @@ ol, ul {
 /* Attachment actions row */
 .attachment-actions {
     margin-top: 0.5rem;
+}
+
+/* Plan item with action buttons */
+.plan-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.4rem 0;
+}
+
+.plan-item-actions {
+    display: flex;
+    gap: 0.25rem;
+    opacity: 0.5;
+    transition: opacity 0.15s;
+}
+
+.plan-item:hover .plan-item-actions {
+    opacity: 1;
+}
+
+/* Ghost button (transparent background, colored icon) */
+.btn-ghost {
+    background: transparent;
+    color: #495057;
+    border: none;
+    padding: 0.25rem;
+    border-radius: 3px;
+}
+
+.btn-ghost:hover {
+    background: #e9ecef;
+    color: #2c3e50;
+}
+
+/* Color Picker Popover */
+.color-picker-popover {
+    position: fixed;
+    z-index: 10000;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-radius: 8px;
+    padding: 12px;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+    width: 180px;
+}
+
+.color-picker-swatches {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 6px;
+    margin-bottom: 10px;
+}
+
+.color-picker-swatch {
+    width: 32px;
+    height: 32px;
+    border-radius: 4px;
+    border: 2px solid transparent;
+    cursor: pointer;
+    padding: 0;
+    transition: border-color 0.15s, transform 0.1s;
+}
+
+.color-picker-swatch:hover {
+    border-color: #2c3e50;
+    transform: scale(1.1);
+}
+
+.color-picker-hex-wrapper {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.color-picker-hex-input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #ced4da;
+    border-radius: 4px;
+    font-size: 0.85rem;
+    font-family: monospace;
+}
+
+.color-picker-hex-input:focus {
+    outline: none;
+    border-color: #3498db;
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+}
+
+.color-picker-hex-hint {
+    font-size: 0.75rem;
+    color: #e74c3c;
+    min-height: 1em;
+    opacity: 0;
+    transition: opacity 0.2s;
+}
+
+.color-picker-hex-hint.visible {
+    opacity: 1;
+}
+
+/* --- Groups Panel Styles --- */
+
+.plan-editor-layout {
+    display: flex;
+    gap: 0;
+    margin-top: 1rem;
+}
+
+/* Expand page container when the groups panel is present */
+.container:has(.plan-editor-layout) {
+    max-width: calc(56rem + 280px);
+}
+
+.plan-editor-layout .plan-editor-container {
+    flex: 1;
+    min-width: 0;
+    margin-top: 0;
+    border-radius: 4px 0 0 4px;
+}
+
+.groups-panel {
+    width: 280px;
+    min-width: 280px;
+    border-left: 1px solid #dee2e6;
+    padding: 16px;
+    overflow-y: auto;
+    max-height: 75vh;
+    background: #fff;
+    border: 1px solid #dee2e6;
+    border-left: none;
+    border-radius: 0 4px 4px 0;
+}
+
+.groups-panel-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 12px;
+}
+
+.groups-panel-header h3 {
+    font-size: 1rem;
+    font-weight: 600;
+    color: #2c3e50;
+    margin: 0;
+}
+
+.groups-panel-list {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+}
+
+.groups-empty-state {
+    font-size: 0.85rem;
+    color: #6c757d;
+    text-align: center;
+    padding: 1.5rem 0.5rem;
+    line-height: 1.4;
+}
+
+/* Group item */
+.group-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    transition: background 0.15s;
+    position: relative;
+}
+
+.group-item:hover {
+    background: #f8f9fa;
+}
+
+.group-item.active {
+    background: #eaf4fd;
+    border: 1px solid #b8daff;
+}
+
+.group-item.hidden {
+    opacity: 0.5;
+}
+
+.group-item.hidden .group-name {
+    text-decoration: line-through;
+}
+
+/* Visibility toggle */
+.group-visibility-toggle {
+    background: none;
+    border: none;
+    cursor: pointer;
+    padding: 2px;
+    line-height: 1;
+    opacity: 0.6;
+    transition: opacity 0.15s;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    color: #495057;
+}
+
+.group-visibility-toggle:hover {
+    opacity: 1;
+}
+
+.group-item.hidden .group-visibility-toggle {
+    opacity: 0.4;
+    color: #adb5bd;
+}
+
+/* Color indicator */
+.group-color-indicator {
+    width: 16px;
+    height: 16px;
+    border-radius: 50%;
+    border: 2px solid rgba(0, 0, 0, 0.1);
+    cursor: pointer;
+    flex-shrink: 0;
+    transition: transform 0.1s;
+}
+
+.group-color-indicator:hover {
+    transform: scale(1.2);
+}
+
+/* Group name */
+.group-name {
+    flex: 1;
+    font-size: 0.85rem;
+    font-weight: 500;
+    color: #2c3e50;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+/* Annotation count badge */
+.group-count {
+    font-size: 0.75rem;
+    color: #6c757d;
+    background: #e9ecef;
+    border-radius: 10px;
+    padding: 1px 7px;
+    min-width: 20px;
+    text-align: center;
+}
+
+/* Delete button */
+.group-delete-btn {
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: #adb5bd;
+    font-size: 0.85rem;
+    padding: 2px 4px;
+    border-radius: 3px;
+    opacity: 0;
+    transition: opacity 0.15s, color 0.15s, background 0.15s;
+}
+
+.group-item:hover .group-delete-btn {
+    opacity: 1;
+}
+
+.group-delete-btn:hover {
+    color: #e74c3c;
+    background: #fdecea;
+}
+
+/* Assign button */
+.group-assign-btn {
+    background: none;
+    border: 1px solid #3498db;
+    color: #3498db;
+    cursor: pointer;
+    font-size: 0.75rem;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-weight: bold;
+    transition: background 0.15s, color 0.15s;
+}
+
+.group-assign-btn:hover {
+    background: #3498db;
+    color: #fff;
+}
+
+/* Rename input */
+.group-rename-input {
+    flex: 1;
+    font-size: 0.85rem;
+    padding: 3px 6px;
+    border: 1px solid #3498db;
+    border-radius: 3px;
+    outline: none;
+    font-family: inherit;
+    min-width: 0;
+}
+
+.group-rename-input:focus {
+    box-shadow: 0 0 0 2px rgba(52, 152, 219, 0.15);
+}
+
+/* Create group input wrapper */
+.group-create-input {
+    margin-bottom: 8px;
+}
+
+.group-create-input .group-rename-input {
+    width: 100%;
+}
+
+/* Clear unassigned button */
+.btn-clear-unassigned {
+    margin-top: 12px;
+    width: 100%;
+    background: #f8f9fa;
+    border: 1px solid #dee2e6;
+    color: #6c757d;
+    font-size: 0.8rem;
+    padding: 6px 10px;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: background 0.15s, color 0.15s, border-color 0.15s;
+}
+
+.btn-clear-unassigned:hover {
+    background: #fdecea;
+    color: #e74c3c;
+    border-color: #f5c6cb;
 }
