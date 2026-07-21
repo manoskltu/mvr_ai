@@ -1,97 +1,127 @@
-"""Hybrid detection dispatcher for structural element detection.
+"""Hybrid detection dispatcher for structural element detection (V2).
 
-Decides whether to use vector path extraction or vision model fallback
-based on the number of vector paths present on a PDF page.
+Two-tier approach:
+1. Extract text from PDF and run regex matching (fast, instant)
+2. Always send the page image + text context to the vision LLM for full analysis
+3. Merge and deduplicate results
 """
 
 import logging
 
-import fitz
-
 from analysis.detection_result import DetectionResult
 from analysis.page_renderer import render_page
-from analysis.vector_detector import detect_elements_vector
+from analysis.text_detector import extract_text_detections
 from analysis.vision_client import detect_elements_vision
 
 logger = logging.getLogger(__name__)
 
 
-def run_detection(
+def run_detection_v2(
     file_path: str,
     page_number: int,
     config: dict,
-) -> tuple[list[DetectionResult], str]:
-    """Run hybrid detection for a PDF page.
+    exclusion_zones: list[dict] | None = None,
+) -> tuple[list[DetectionResult], list[str]]:
+    """Run two-tier detection for a PDF page.
 
-    Decides between vector detection and vision model fallback based on
-    the number of vector paths on the page:
-    - If path count >= threshold: use vector detection (fast, precise)
-    - If path count < threshold: use vision model (for rasterized/scanned pages)
+    1. Run regex text detection (fast, always runs)
+    2. Send page image to vision model for visual detection (always runs)
+    3. Merge results, deduplicate by proximity
 
     Args:
         file_path: Path to the PDF file.
-        page_number: 1-indexed page number to analyze.
+        page_number: 1-indexed page number.
         config: Configuration dict from get_analysis_config().
+        exclusion_zones: Optional exclusion zone rectangles.
 
     Returns:
-        Tuple of (results_list, method_used) where method_used is "vector" or "vision".
-        Returns ([], method) if detection finds nothing or fails.
+        Tuple of (merged_results, methods_used).
+        methods_used is a list like ["text"] or ["text", "vision"].
     """
-    threshold = config.get("detection_vector_threshold", 10)
-    max_results = config.get("detection_max_results", 50)
+    max_results = config.get("detection_max_results", 100)
+    duplicate_proximity = config.get("detection_duplicate_proximity", 0.03)
+    use_vision = config.get("detection_use_vision", True)
 
-    # Count vector paths to decide which detector to use
-    try:
-        doc = fitz.open(file_path)
-    except Exception as e:
-        logger.warning("Failed to open PDF for detection: %s: %s", file_path, e)
-        return ([], "vector")
+    methods_used: list[str] = []
 
-    try:
-        page_idx = page_number - 1
-        if page_idx < 0 or page_idx >= len(doc):
-            logger.warning(
-                "Page %d out of range for %s (total: %d)",
-                page_number, file_path, len(doc),
-            )
-            return ([], "vector")
+    # Tier 1: Regex text detection (always runs, instant)
+    text_results = extract_text_detections(
+        file_path, page_number, exclusion_zones,
+        use_llm=False,  # Don't use text-only LLM, we'll use vision instead
+    )
+    methods_used.append("text")
 
-        page = doc[page_idx]
-        path_count = len(page.get_drawings())
-    except Exception as e:
-        logger.warning("Failed to count paths on page %d of %s: %s", page_number, file_path, e)
-        return ([], "vector")
-    finally:
-        doc.close()
+    # Tier 2: Vision model detection (sends the actual image)
+    vision_results: list[DetectionResult] = []
+    if use_vision:
+        try:
+            image = render_page(file_path, page_number)
+            if image is not None:
+                model = config.get("vision_model", "llama3.2-vision")
+                base_url = config.get("vision_base_url", "http://localhost:11434")
+                timeout = config.get("vision_timeout", 60)
+                min_box_size = config.get("vision_min_box_size", 0.005)
 
-    # Dispatch based on path count threshold
-    if path_count >= threshold:
-        # Primary: vector detection
-        results = detect_elements_vector(file_path, page_number, config)
-        method = "vector"
-    else:
-        # Fallback: vision model detection
-        image, _ = render_page(file_path, page_number)
-        if image is None:
-            logger.warning("Failed to render page %d of %s for vision detection", page_number, file_path)
-            return ([], "vision")
+                vision_results = detect_elements_vision(
+                    image=image,
+                    model=model,
+                    base_url=base_url,
+                    timeout=timeout,
+                    min_box_size=min_box_size,
+                )
+                if vision_results:
+                    methods_used.append("vision")
+        except Exception as e:
+            logger.warning("Vision detection failed: %s", e)
 
-        model = config.get("vision_model", "llama3.2-vision")
-        base_url = config.get("vision_base_url", "http://localhost:11434")
-        timeout = config.get("vision_timeout", 300)
-        min_box_size = config.get("vision_min_box_size", 0.005)
+    # Merge and deduplicate
+    merged = deduplicate_results(
+        text_results + vision_results,
+        proximity_threshold=duplicate_proximity,
+    )
 
-        results = detect_elements_vision(
-            image=image,
-            model=model,
-            base_url=base_url,
-            timeout=timeout,
-            min_box_size=min_box_size,
-        )
-        method = "vision"
+    # Truncate to max results
+    if len(merged) > max_results:
+        merged = merged[:max_results]
 
-    # Truncate to max_results
-    if len(results) > max_results:
-        results = results[:max_results]
+    return (merged, methods_used)
 
-    return (results, method)
+
+def deduplicate_results(
+    results: list[DetectionResult],
+    proximity_threshold: float = 0.03,
+) -> list[DetectionResult]:
+    """Remove duplicate detections based on center-point proximity.
+
+    When two detections are within proximity_threshold distance,
+    keep the one from the more reliable method (text > vision).
+    """
+    if not results:
+        return []
+
+    method_priority = {"text": 0, "llm": 1, "vision": 2}
+
+    kept: list[DetectionResult] = []
+
+    for result in results:
+        cx = result.x + result.width / 2
+        cy = result.y + result.height / 2
+
+        is_duplicate = False
+        for i, existing in enumerate(kept):
+            ex = existing.x + existing.width / 2
+            ey = existing.y + existing.height / 2
+
+            dist = ((cx - ex) ** 2 + (cy - ey) ** 2) ** 0.5
+            if dist <= proximity_threshold:
+                result_priority = method_priority.get(result.detection_method, 3)
+                existing_priority = method_priority.get(existing.detection_method, 3)
+                if result_priority < existing_priority:
+                    kept[i] = result
+                is_duplicate = True
+                break
+
+        if not is_duplicate:
+            kept.append(result)
+
+    return kept

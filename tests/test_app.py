@@ -20,7 +20,7 @@ def test_index_returns_200(client):
 def test_index_contains_page_title(client):
     """Response body should contain the project name as page title."""
     response = client.get("/")
-    assert b"MVR Offer Tool" in response.data
+    assert b"MVR Tool" in response.data
 
 
 def test_swedish_characters_render(client):
@@ -30,7 +30,7 @@ def test_swedish_characters_render(client):
     # The pipeline step names or page content should be intact —
     # verify the response is valid UTF-8 containing Swedish-friendly content.
     # At minimum, the template renders without encoding errors.
-    assert "MVR Offer Tool" in text
+    assert "MVR Tool" in text
     # Verify å, ä, ö can appear in the response (from template/content)
     # The base template declares UTF-8 charset, so we confirm encoding works
     # by asserting the decoded text doesn't contain replacement characters.

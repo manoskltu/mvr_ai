@@ -1,0 +1,69 @@
+- generic [active] [ref=f10e1]:
+  - navigation [ref=f10e2]:
+    - link "Hem" [ref=f10e3] [cursor=pointer]:
+      - /url: /
+    - link "Data" [ref=f10e4] [cursor=pointer]:
+      - /url: /data/
+    - link "Plan" [ref=f10e5] [cursor=pointer]:
+      - /url: /data/plan
+    - link "Analys" [ref=f10e6] [cursor=pointer]:
+      - /url: /data/analys
+  - generic [ref=f10e7]:
+    - link "← Tillbaka till Plan" [ref=f10e8] [cursor=pointer]:
+      - /url: /data/plan
+    - heading "K-20-1-0100-447001.pdf" [level=1] [ref=f10e9]
+    - generic [ref=f10e10]:
+      - button "Rita (draw)" [ref=f10e11] [cursor=pointer]
+      - button "Välj (select)" [ref=f10e15] [cursor=pointer]
+      - button "Panorera (pan)" [ref=f10e19] [cursor=pointer]
+      - button "Markera exkluderingszon" [ref=f10e25] [cursor=pointer]
+      - button "Ta bort (delete)" [ref=f10e30] [cursor=pointer]
+      - generic [ref=f10e34]:
+        - button "←" [disabled] [ref=f10e35]
+        - generic [ref=f10e36]: Sida 1 / 1
+        - button "→" [disabled] [ref=f10e37]
+      - generic [ref=f10e38]:
+        - button "Zooma ut (-)" [ref=f10e39] [cursor=pointer]
+        - slider [ref=f10e41] [cursor=pointer]: "100"
+        - button "Zooma in (+)" [ref=f10e42] [cursor=pointer]
+        - generic [ref=f10e44]: 100%
+      - generic [ref=f10e45]:
+        - button "Detektera" [ref=f10e46] [cursor=pointer]
+        - button "▾" [ref=f10e51] [cursor=pointer]
+      - button "Analysera" [ref=f10e52] [cursor=pointer]
+    - generic [ref=f10e59]:
+      - img "PDF-sida" [ref=f10e61]
+      - generic [ref=f10e63]:
+        - generic [ref=f10e64]:
+          - heading "Grupper" [level=3] [ref=f10e65]
+          - button "+ Ny grupp" [ref=f10e66] [cursor=pointer]
+        - generic [ref=f10e67]:
+          - generic [ref=f10e74] [cursor=pointer]:
+            - button "Dölj" [ref=f10e75]
+            - generic [ref=f10e80]: Ø200
+            - generic [ref=f10e81]: "4"
+            - spinbutton "Antal (överstyr vid ändring)" [ref=f10e82]: "4"
+            - button "⊕" [ref=f10e83]
+            - button "✕" [ref=f10e84]
+          - generic [ref=f10e85] [cursor=pointer]:
+            - button "Dölj" [ref=f10e86]
+            - generic [ref=f10e91]: Ø240
+            - generic [ref=f10e92]: "3"
+            - spinbutton "Antal (överstyr vid ändring)" [ref=f10e93]: "3"
+            - button "⊕" [ref=f10e94]
+            - button "✕" [ref=f10e95]
+          - generic [ref=f10e96] [cursor=pointer]:
+            - button "Dölj" [ref=f10e97]
+            - generic [ref=f10e102]: Ø355
+            - generic [ref=f10e103]: "2"
+            - spinbutton "Antal (överstyr vid ändring)" [ref=f10e104]: "2"
+            - button "⊕" [ref=f10e105]
+            - button "✕" [ref=f10e106]
+          - generic [ref=f10e107] [cursor=pointer]:
+            - button "Dölj" [ref=f10e108]
+            - generic [ref=f10e113]: HEA 240
+            - generic [ref=f10e114]: "1"
+            - spinbutton "Antal (överstyr vid ändring)" [ref=f10e115]: "1"
+            - button "⊕" [ref=f10e116]
+            - button "✕" [ref=f10e117]
+  - generic [ref=f10e118]: "10 detaljer hittade i 4 grupper (metod: text)"

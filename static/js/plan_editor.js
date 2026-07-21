@@ -27,6 +27,8 @@ const state = {
     groups: [],              // Array of group objects from API
     activeGroupId: null,     // Group ID for new annotations (selected in panel)
     hiddenGroupIds: new Set(), // Groups toggled invisible (client-side)
+    exclusionZones: [],      // Array of {id, x, y, width, height} for current page
+    selectedExclusionZoneId: null, // Currently selected exclusion zone ID
 };
 
 // --- Coordinate helpers ---
@@ -175,6 +177,9 @@ async function loadPage(pageNumber) {
 
         // Fetch annotations for this page
         await fetchAnnotations(state.attachmentId, pageNumber);
+
+        // Fetch exclusion zones for this page
+        await fetchExclusionZones(state.attachmentId, pageNumber);
     } catch (err) {
         const loader = document.getElementById('loading-indicator');
         if (loader) loader.style.display = 'none';
@@ -245,6 +250,33 @@ function render() {
         }
     }
 
+    // Render exclusion zones
+    for (const zone of (state.exclusionZones || [])) {
+        const zx = fromRatio(zone.x, w);
+        const zy = fromRatio(zone.y, h);
+        const zw = fromRatio(zone.width, w);
+        const zh = fromRatio(zone.height, h);
+        
+        const isSelectedZone = (zone.id === state.selectedExclusionZoneId);
+        
+        ctx.fillStyle = isSelectedZone ? 'rgba(128, 128, 128, 0.35)' : 'rgba(128, 128, 128, 0.2)';
+        ctx.fillRect(zx, zy, zw, zh);
+        ctx.strokeStyle = isSelectedZone ? '#e74c3c' : '#666';
+        ctx.lineWidth = isSelectedZone ? 2 : 1;
+        ctx.setLineDash([4, 4]);
+        ctx.strokeRect(zx, zy, zw, zh);
+        ctx.setLineDash([]);
+        
+        // Draw X pattern
+        ctx.beginPath();
+        ctx.moveTo(zx, zy);
+        ctx.lineTo(zx + zw, zy + zh);
+        ctx.moveTo(zx + zw, zy);
+        ctx.lineTo(zx, zy + zh);
+        ctx.strokeStyle = isSelectedZone ? 'rgba(231, 76, 60, 0.5)' : 'rgba(128, 128, 128, 0.4)';
+        ctx.stroke();
+    }
+
     // Draw preview rectangle during draw action
     if (state.isDragging && state.dragAction === 'draw' && state.dragStart && state._drawCurrent) {
         const sx = state.dragStart.x;
@@ -307,6 +339,24 @@ function handleMouseDown(e) {
         return;
     }
 
+    if (state.mode === 'exclusion') {
+        // Check if clicking on an existing exclusion zone first (to select for deletion)
+        const zoneHit = hitTestExclusionZone(pos.x, pos.y);
+        if (zoneHit) {
+            state.selectedExclusionZoneId = zoneHit.id;
+            state.selectedId = null;
+            render();
+            return;
+        }
+        // Otherwise start drawing a new exclusion zone
+        state.selectedExclusionZoneId = null;
+        state.isDragging = true;
+        state.dragAction = 'draw';
+        state.dragStart = pos;
+        state._drawCurrent = pos;
+        return;
+    }
+
     // Select mode
     if (state.mode === 'select') {
         // Check if clicking on a resize handle of the selected annotation
@@ -330,6 +380,7 @@ function handleMouseDown(e) {
         const hit = hitTest(pos.x, pos.y);
         if (hit) {
             state.selectedId = hit.id;
+            state.selectedExclusionZoneId = null;
             render();
             renderGroupsPanel();
 
@@ -340,10 +391,20 @@ function handleMouseDown(e) {
             state.dragAnnotation = hit;
             state.originalAnnotation = { ...hit };
         } else {
-            // Deselect
-            state.selectedId = null;
-            render();
-            renderGroupsPanel();
+            // Check if clicking on an exclusion zone
+            const zoneHit = hitTestExclusionZone(pos.x, pos.y);
+            if (zoneHit) {
+                state.selectedExclusionZoneId = zoneHit.id;
+                state.selectedId = null;
+                render();
+                renderGroupsPanel();
+            } else {
+                // Deselect all
+                state.selectedId = null;
+                state.selectedExclusionZoneId = null;
+                render();
+                renderGroupsPanel();
+            }
         }
     }
 }
@@ -357,7 +418,7 @@ function handleMouseMove(e) {
 
     if (!state.isDragging) {
         // Update cursor based on context
-        if (state.mode === 'draw') {
+        if (state.mode === 'draw' || state.mode === 'exclusion') {
             state.canvas.style.cursor = 'crosshair';
         } else if (state.mode === 'pan') {
             state.canvas.style.cursor = state.isPanning ? 'grabbing' : 'grab';
@@ -466,7 +527,12 @@ function handleMouseUp(e) {
             const annH = toRatio(rectH, h);
 
             const ann = constrain({ x, y, width: annW, height: annH });
-            createAnnotation(ann);
+
+            if (state.mode === 'exclusion') {
+                createExclusionZone(ann);
+            } else {
+                createAnnotation(ann);
+            }
         } else {
             render(); // Clear preview
         }
@@ -549,6 +615,11 @@ function handleKeyDown(e) {
         // Don't delete if focus is on an input
         if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') return;
         e.preventDefault();
+        // Delete selected exclusion zone if one is selected
+        if (state.selectedExclusionZoneId !== null) {
+            deleteExclusionZone(state.selectedExclusionZoneId);
+            return;
+        }
         deleteSelected();
     }
 }
@@ -800,6 +871,138 @@ async function clearUnassignedAnnotations() {
     }
 }
 
+// --- Exclusion Zone API ---
+
+async function fetchExclusionZones(attachmentId, pageNumber) {
+    try {
+        const response = await fetch(`/data/api/exclusion-zones/${attachmentId}/${pageNumber}`);
+        if (response.ok) {
+            state.exclusionZones = await response.json();
+            render();
+        }
+    } catch (err) { /* silently ignore */ }
+}
+
+async function createExclusionZone(zone) {
+    const body = {
+        attachment_id: state.attachmentId,
+        page_number: state.currentPage,
+        ...zone,
+    };
+    try {
+        const response = await fetch('/data/api/exclusion-zones', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+        if (response.ok) {
+            const created = await response.json();
+            state.exclusionZones.push(created);
+            render();
+        }
+    } catch (err) { showError('Kunde inte skapa exkluderingszon.'); }
+}
+
+async function deleteExclusionZone(zoneId) {
+    try {
+        const response = await fetch(`/data/api/exclusion-zones/${zoneId}`, {
+            method: 'DELETE',
+        });
+        if (response.ok) {
+            state.exclusionZones = state.exclusionZones.filter(z => z.id !== zoneId);
+            state.selectedExclusionZoneId = null;
+            render();
+        }
+    } catch (err) { showError('Kunde inte ta bort exkluderingszon.'); }
+}
+
+function hitTestExclusionZone(x, y) {
+    const w = state.canvas.width;
+    const h = state.canvas.height;
+    for (let i = state.exclusionZones.length - 1; i >= 0; i--) {
+        const zone = state.exclusionZones[i];
+        const zx = fromRatio(zone.x, w);
+        const zy = fromRatio(zone.y, h);
+        const zw = fromRatio(zone.width, w);
+        const zh = fromRatio(zone.height, h);
+        if (x >= zx && x <= zx + zw && y >= zy && y <= zy + zh) {
+            return zone;
+        }
+    }
+    return null;
+}
+
+// --- Group Merge ---
+
+async function mergeGroups(sourceId, targetId) {
+    if (!confirm('Slå ihop grupper? Annoteringarna flyttas till målgruppen.')) return;
+    try {
+        const response = await fetch('/data/api/groups/merge', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source_group_id: sourceId, target_group_id: targetId }),
+        });
+        if (response.ok) {
+            await fetchGroups(state.attachmentId);
+            await fetchAnnotations(state.attachmentId, state.currentPage);
+            renderGroupsPanel();
+        } else {
+            showError('Kunde inte slå ihop grupper.');
+        }
+    } catch (err) { showError('Kunde inte slå ihop grupper.'); }
+}
+
+function showMergeTargets(sourceGroupId, anchorElement) {
+    // Remove any existing merge dropdown
+    const existing = document.querySelector('.merge-dropdown');
+    if (existing) existing.remove();
+
+    const otherGroups = state.groups.filter(g => g.id !== sourceGroupId);
+    if (otherGroups.length === 0) {
+        showError('Ingen annan grupp att slå ihop med.');
+        return;
+    }
+
+    const dropdown = document.createElement('div');
+    dropdown.className = 'merge-dropdown dropdown-menu';
+    dropdown.style.display = 'block';
+    dropdown.style.position = 'absolute';
+    dropdown.style.zIndex = '1000';
+
+    for (const target of otherGroups) {
+        const link = document.createElement('a');
+        link.href = '#';
+        link.textContent = target.name;
+        link.addEventListener('click', function (e) {
+            e.preventDefault();
+            e.stopPropagation();
+            dropdown.remove();
+            mergeGroups(sourceGroupId, target.id);
+        });
+        dropdown.appendChild(link);
+    }
+
+    // Position relative to anchor
+    const item = anchorElement.closest('.group-item');
+    if (item) {
+        item.style.position = 'relative';
+        item.appendChild(dropdown);
+        dropdown.style.top = '100%';
+        dropdown.style.right = '0';
+        dropdown.style.left = 'auto';
+    }
+
+    // Close on outside click
+    setTimeout(() => {
+        document.addEventListener('click', function closeMerge(e) {
+            if (!dropdown.contains(e.target)) {
+                dropdown.remove();
+                document.removeEventListener('click', closeMerge);
+            }
+        });
+    }, 0);
+}
+
 // --- Groups panel rendering ---
 
 function renderGroupsPanel() {
@@ -874,6 +1077,36 @@ function renderGroupsPanel() {
         const localCount = state.annotations.filter(a => a.group_id === group.id).length;
         countBadge.textContent = localCount;
 
+        // Quantity override input
+        const quantityInput = document.createElement('input');
+        quantityInput.type = 'number';
+        quantityInput.className = 'group-quantity-input';
+        const overrideValue = group.quantity_override !== null && group.quantity_override !== undefined
+            ? group.quantity_override : localCount;
+        quantityInput.value = overrideValue;
+        if (group.quantity_override !== null && group.quantity_override !== undefined) {
+            quantityInput.classList.add('overridden');
+        }
+        quantityInput.title = 'Antal (överstyr vid ändring)';
+        quantityInput.min = '0';
+        quantityInput.addEventListener('click', function (e) { e.stopPropagation(); });
+        quantityInput.addEventListener('change', function (e) {
+            e.stopPropagation();
+            const val = quantityInput.value.trim();
+            const override = val === '' || parseInt(val, 10) === localCount ? null : parseInt(val, 10);
+            updateGroup(group.id, { quantity_override: override });
+        });
+
+        // Merge button
+        const mergeBtn = document.createElement('button');
+        mergeBtn.className = 'group-merge-btn';
+        mergeBtn.title = 'Slå ihop med annan grupp';
+        mergeBtn.textContent = '⊕';
+        mergeBtn.addEventListener('click', function (e) {
+            e.stopPropagation();
+            showMergeTargets(group.id, mergeBtn);
+        });
+
         // Delete button
         const deleteBtn = document.createElement('button');
         deleteBtn.className = 'group-delete-btn';
@@ -888,6 +1121,8 @@ function renderGroupsPanel() {
         item.appendChild(colorIndicator);
         item.appendChild(nameSpan);
         item.appendChild(countBadge);
+        item.appendChild(quantityInput);
+        item.appendChild(mergeBtn);
         item.appendChild(deleteBtn);
 
         // Assign button when annotation is selected
@@ -1227,9 +1462,11 @@ function setMode(mode) {
     document.getElementById('btn-draw').classList.toggle('active', mode === 'draw');
     document.getElementById('btn-select').classList.toggle('active', mode === 'select');
     document.getElementById('btn-pan').classList.toggle('active', mode === 'pan');
+    const exclusionBtn = document.getElementById('btn-exclusion');
+    if (exclusionBtn) exclusionBtn.classList.toggle('active', mode === 'exclusion');
 
     // Update cursor
-    if (mode === 'draw') {
+    if (mode === 'draw' || mode === 'exclusion') {
         state.canvas.style.cursor = 'crosshair';
     } else if (mode === 'pan') {
         state.canvas.style.cursor = 'grab';
@@ -1257,6 +1494,10 @@ function nextPage() {
 // --- Delete selected ---
 
 function deleteSelected() {
+    if (state.selectedExclusionZoneId !== null) {
+        deleteExclusionZone(state.selectedExclusionZoneId);
+        return;
+    }
     if (state.selectedId !== null) {
         deleteAnnotation(state.selectedId);
     }
@@ -1385,21 +1626,35 @@ function handleWheel(e) {
 
 // --- Trigger auto-detection ---
 
+function toggleDetectMenu() {
+    const menu = document.getElementById('detect-menu');
+    menu.style.display = menu.style.display === 'none' ? 'block' : 'none';
+}
+
+// Close dropdown on outside click
+document.addEventListener('click', function(e) {
+    const dropdown = document.getElementById('detect-dropdown');
+    if (dropdown && !dropdown.contains(e.target)) {
+        document.getElementById('detect-menu').style.display = 'none';
+    }
+});
+
 async function triggerDetection() {
     const btn = document.getElementById('btn-detect');
-    if (!btn) return;
-
     const originalText = btn.innerHTML;
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px;"></span>Detekterar...';
 
-    const body = {};
-    if (state.activeGroupId !== null) {
-        body.group_id = state.activeGroupId;
-    }
+    // Get exclusion zones for this page
+    const exclusionZones = state.exclusionZones || [];
+
+    const body = {
+        page_number: state.currentPage,
+        exclusion_zones: exclusionZones,
+    };
 
     try {
-        const response = await fetch(`/data/api/detect/${state.attachmentId}/${state.currentPage}`, {
+        const response = await fetch(`/data/api/detect-v2/${state.attachmentId}`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(body),
@@ -1407,31 +1662,74 @@ async function triggerDetection() {
 
         if (response.ok) {
             const data = await response.json();
-
-            // Add returned annotations to local state
-            if (data.annotations && data.annotations.length > 0) {
+            // Add annotations to local state
+            if (data.annotations) {
                 for (const ann of data.annotations) {
-                    state.annotations.push(ann);
+                    if (ann.page_number === state.currentPage) {
+                        state.annotations.push(ann);
+                    }
                 }
             }
-
-            // Refresh groups to get the new/updated group
             await fetchGroups(state.attachmentId);
-
             render();
             renderGroupsPanel();
 
-            // Show success notification
-            if (data.count > 0) {
-                showInfo(`${data.count} element detekterade (metod: ${data.detection_method})`);
+            const methods = data.methods_used ? data.methods_used.join(', ') : 'text';
+            if (data.summary && data.summary.total_instances > 0) {
+                showInfo(`${data.summary.total_instances} detaljer hittade i ${data.summary.total_types} grupper (metod: ${methods})`);
             } else {
-                showInfo('Inga element hittades på denna sida.');
+                showInfo('Inga detaljer hittades på denna sida.');
+            }
+            if (data.warning) {
+                showError(data.warning);
             }
         } else if (response.status === 503) {
-            showError('Vision-tjänsten är inte tillgänglig. Kontrollera att Ollama körs.');
+            showError('Vision-tjänsten är inte tillgänglig.');
         } else {
-            const errData = await response.json().catch(() => null);
-            showError(errData?.error || 'Detekteringen misslyckades.');
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Detekteringen misslyckades.');
+        }
+    } catch (err) {
+        showError('Kunde inte ansluta till servern.');
+    }
+
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+}
+
+async function triggerBatchDetection() {
+    const btn = document.getElementById('btn-detect');
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px;"></span>Detekterar alla sidor...';
+
+    const exclusionZones = state.exclusionZones || [];
+    const body = {
+        batch: true,
+        exclusion_zones: exclusionZones,
+    };
+
+    try {
+        const response = await fetch(`/data/api/detect-v2/${state.attachmentId}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+            // Reload annotations for current page
+            await fetchAnnotations(state.attachmentId, state.currentPage);
+            await fetchGroups(state.attachmentId);
+            render();
+            renderGroupsPanel();
+
+            if (data.summary) {
+                showInfo(`${data.summary.total_instances} detaljer hittade i ${data.summary.total_types} grupper (${data.summary.pages_processed} sidor)`);
+            }
+        } else {
+            const err = await response.json().catch(() => null);
+            showError(err?.error || 'Batch-detekteringen misslyckades.');
         }
     } catch (err) {
         showError('Kunde inte ansluta till servern.');

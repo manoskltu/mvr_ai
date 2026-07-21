@@ -62,6 +62,7 @@ class AnnotationGroupModel(db.Model):
     name = db.Column(db.Text, nullable=False)
     color = db.Column(db.String(7), nullable=False, default="#3498db")
     display_order = db.Column(db.Integer, nullable=False, default=0)
+    quantity_override = db.Column(db.Integer, nullable=True, default=None)
     created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
 
     attachment = db.relationship("AttachmentModel", backref="annotation_groups")
@@ -100,6 +101,31 @@ class AnnotationModel(db.Model):
 
     __table_args__ = (
         db.Index("ix_annotations_attachment_page", "attachment_id", "page_number"),
+    )
+
+
+class ExclusionZoneModel(db.Model):
+    """Stores user-defined exclusion zones for PDF pages (title blocks, legends)."""
+
+    __tablename__ = "exclusion_zones"
+
+    id = db.Column(db.Integer, primary_key=True, autoincrement=True)
+    attachment_id = db.Column(
+        db.Integer,
+        db.ForeignKey("attachments.id", ondelete="CASCADE"),
+        nullable=False,
+    )
+    page_number = db.Column(db.Integer, nullable=False)  # 1-indexed
+    x = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
+    y = db.Column(db.Float, nullable=False)       # ratio 0.0–1.0
+    width = db.Column(db.Float, nullable=False)   # ratio 0.0–1.0
+    height = db.Column(db.Float, nullable=False)  # ratio 0.0–1.0
+    created_at = db.Column(db.DateTime, nullable=False, default=lambda: datetime.now(tz=None))
+
+    attachment = db.relationship("AttachmentModel", backref="exclusion_zones")
+
+    __table_args__ = (
+        db.Index("ix_exclusion_zones_attachment_page", "attachment_id", "page_number"),
     )
 
 

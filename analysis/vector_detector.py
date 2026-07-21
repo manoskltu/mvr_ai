@@ -76,7 +76,8 @@ def detect_elements_vector(
         if not drawings:
             return []
 
-        # Group paths by their stroke color (primary) or fill color
+        # Only keep closed paths or paths with fill — these indicate
+        # deliberate regions/zones rather than open construction lines
         color_groups: dict[tuple, list[tuple[float, float, float, float]]] = defaultdict(list)
 
         for path in drawings:
@@ -84,10 +85,20 @@ def detect_elements_vector(
             if rect is None:
                 continue
 
+            # Only include closed paths (rectangles, polygons) or filled paths
+            # Open lines (beams, arrows, dimension lines) are skipped
+            is_closed = path.get("closePath", False)
+            has_fill = path.get("fill") is not None
+            items = path.get("items", [])
+            is_rect = any(item[0] == "re" for item in items) if items else False
+
+            if not (is_closed or has_fill or is_rect):
+                continue
+
             # Determine the path's color identity
             color_key = _get_color_key(path)
             if color_key is None:
-                continue  # Skip paths with no color (invisible)
+                continue
 
             # Convert from PDF points to 0-1 ratios
             x = rect.x0 / page_width
@@ -95,8 +106,12 @@ def detect_elements_vector(
             w = (rect.x1 - rect.x0) / page_width
             h = (rect.y1 - rect.y0) / page_height
 
-            # Filter tiny paths (noise: dots, very short line segments)
+            # Filter tiny paths (noise)
             if w < min_path_size and h < min_path_size:
+                continue
+            
+            # Require some minimum area (skip very thin lines that happen to be "closed")
+            if w < 0.005 or h < 0.005:
                 continue
 
             color_groups[color_key].append((x, y, w, h))

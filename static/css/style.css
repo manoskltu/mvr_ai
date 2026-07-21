@@ -1099,3 +1099,23 @@ ol, ul {
     opacity: 0;
     transition: opacity 0.3s ease;
 }
+
+/* Detect dropdown */
+.detect-dropdown { position: relative; display: inline-flex; }
+.btn-dropdown-toggle { border-left: 1px solid rgba(255,255,255,0.3); padding: 0.5rem 0.5rem; border-radius: 0 4px 4px 0; }
+.detect-dropdown .btn:first-child { border-radius: 4px 0 0 4px; }
+.dropdown-menu { position: absolute; top: 100%; left: 0; background: #fff; border: 1px solid #dee2e6; border-radius: 4px; box-shadow: 0 4px 12px rgba(0,0,0,0.15); z-index: 1000; min-width: 200px; }
+.dropdown-menu a { display: block; padding: 0.5rem 1rem; text-decoration: none; color: #2c3e50; font-size: 0.9rem; }
+.dropdown-menu a:hover { background: #f8f9fa; }
+
+/* Quantity override input */
+.group-quantity-input { width: 40px; padding: 1px 4px; border: 1px solid #dee2e6; border-radius: 3px; font-size: 0.75rem; text-align: center; }
+.group-quantity-input.overridden { font-weight: bold; border-color: #f39c12; }
+
+/* Merge button */
+.group-merge-btn { background: none; border: none; cursor: pointer; color: #adb5bd; font-size: 0.7rem; padding: 2px 4px; opacity: 0; transition: opacity 0.15s; }
+.group-item:hover .group-merge-btn { opacity: 1; }
+.group-merge-btn:hover { color: #3498db; }
+
+/* Merge dropdown */
+.merge-dropdown { min-width: 160px; }

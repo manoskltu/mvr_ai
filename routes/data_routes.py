@@ -20,12 +20,12 @@ from flask import (
     send_file,
     url_for,
 )
-from sqlalchemy import func
+from sqlalchemy import func, update
 
 import data_store
 import import_handler
 from attachment_store import get_attachment_full_path
-from db_models import AnalysisResultModel, AnnotationGroupModel, AnnotationModel, AttachmentModel, EmailRecordModel, db
+from db_models import AnalysisResultModel, AnnotationGroupModel, AnnotationModel, AttachmentModel, EmailRecordModel, ExclusionZoneModel, db
 from models import EmailRecord
 from analysis.analysis_pipeline import run_analysis, serialize_result, deserialize_result
 from analysis.config import get_analysis_config
@@ -739,6 +739,7 @@ def get_groups(attachment_id):
     result = []
     for group in groups:
         annotation_count = AnnotationModel.query.filter_by(group_id=group.id).count()
+        effective_quantity = group.quantity_override if group.quantity_override is not None else annotation_count
         result.append({
             "id": group.id,
             "attachment_id": group.attachment_id,
@@ -747,6 +748,8 @@ def get_groups(attachment_id):
             "display_order": group.display_order,
             "created_at": group.created_at.isoformat() if group.created_at else None,
             "annotation_count": annotation_count,
+            "quantity_override": group.quantity_override,
+            "effective_quantity": effective_quantity,
         })
 
     return jsonify(result)
@@ -814,7 +817,7 @@ def create_group():
 
 @data_bp.route("/api/groups/<int:group_id>", methods=["PUT"])
 def update_group(group_id):
-    """Update an annotation group (name, color, display_order).
+    """Update an annotation group (name, color, display_order, quantity_override).
 
     Validates name uniqueness (excluding self) and color format.
     Returns 200 with updated group. Returns 404 if group not found, 400 for invalid data.
@@ -839,9 +842,21 @@ def update_group(group_id):
     if "display_order" in validated:
         group.display_order = validated["display_order"]
 
+    # Handle quantity_override
+    if "quantity_override" in data:
+        override_val = data["quantity_override"]
+        if override_val is None:
+            group.quantity_override = None
+        else:
+            try:
+                group.quantity_override = int(override_val)
+            except (ValueError, TypeError):
+                return jsonify({"error": "quantity_override must be an integer or null"}), 400
+
     db.session.commit()
 
     annotation_count = AnnotationModel.query.filter_by(group_id=group.id).count()
+    effective_quantity = group.quantity_override if group.quantity_override is not None else annotation_count
 
     return jsonify({
         "id": group.id,
@@ -851,6 +866,8 @@ def update_group(group_id):
         "display_order": group.display_order,
         "created_at": group.created_at.isoformat() if group.created_at else None,
         "annotation_count": annotation_count,
+        "quantity_override": group.quantity_override,
+        "effective_quantity": effective_quantity,
     })
 
 
@@ -914,6 +931,184 @@ def assign_annotation_group(annotation_id):
         "group_id": ann.group_id,
         "group_color": group_color,
         "created_at": ann.created_at.isoformat() if ann.created_at else None,
+    })
+
+
+# --- Exclusion Zone CRUD API (Task 7.1) ---
+
+@data_bp.route("/api/exclusion-zones/<int:attachment_id>/<int:page_number>")
+def get_exclusion_zones(attachment_id, page_number):
+    """List exclusion zones for a specific attachment page.
+
+    Returns JSON array of zones: [{"id": 1, "x": 0.75, "y": 0.85, "width": 0.25, "height": 0.15}]
+    Returns 404 if attachment not found.
+    """
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+
+    zones = ExclusionZoneModel.query.filter_by(
+        attachment_id=attachment_id, page_number=page_number
+    ).all()
+
+    result = []
+    for zone in zones:
+        result.append({
+            "id": zone.id,
+            "x": zone.x,
+            "y": zone.y,
+            "width": zone.width,
+            "height": zone.height,
+        })
+
+    return jsonify(result)
+
+
+@data_bp.route("/api/exclusion-zones", methods=["POST"])
+def create_exclusion_zone():
+    """Create a new exclusion zone.
+
+    Accepts JSON body: {"attachment_id": 5, "page_number": 1, "x": 0.75, "y": 0.85, "width": 0.25, "height": 0.15}
+    Validates: attachment exists, page_number >= 1, coordinates in [0.0, 1.0].
+    Returns 201 with created zone including id.
+    Returns 400 for invalid data, 404 for missing attachment.
+    """
+    data = request.get_json(force=True)
+
+    # Validate required fields
+    required = ["attachment_id", "page_number", "x", "y", "width", "height"]
+    for field in required:
+        if field not in data:
+            return jsonify({"error": f"Missing required field: {field}"}), 400
+
+    # Validate types and values
+    try:
+        attachment_id = int(data["attachment_id"])
+        page_number = int(data["page_number"])
+        x = float(data["x"])
+        y = float(data["y"])
+        width = float(data["width"])
+        height = float(data["height"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid field types"}), 400
+
+    if page_number < 1:
+        return jsonify({"error": "page_number must be >= 1"}), 400
+
+    if not (0.0 <= x <= 1.0 and 0.0 <= y <= 1.0 and 0.0 <= width <= 1.0 and 0.0 <= height <= 1.0):
+        return jsonify({"error": "Coordinate values must be between 0.0 and 1.0"}), 400
+
+    # Validate attachment exists
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None:
+        abort(404)
+
+    zone = ExclusionZoneModel(
+        attachment_id=attachment_id,
+        page_number=page_number,
+        x=x,
+        y=y,
+        width=width,
+        height=height,
+    )
+    db.session.add(zone)
+    db.session.commit()
+
+    return jsonify({
+        "id": zone.id,
+        "x": zone.x,
+        "y": zone.y,
+        "width": zone.width,
+        "height": zone.height,
+    }), 201
+
+
+@data_bp.route("/api/exclusion-zones/<int:zone_id>", methods=["DELETE"])
+def delete_exclusion_zone(zone_id):
+    """Delete an exclusion zone.
+
+    Returns 404 if zone not found.
+    Returns {"success": true} on success.
+    """
+    zone = db.session.get(ExclusionZoneModel, zone_id)
+    if zone is None:
+        abort(404)
+
+    db.session.delete(zone)
+    db.session.commit()
+
+    return jsonify({"success": True})
+
+
+# --- Group Merge API (Task 7.2) ---
+
+@data_bp.route("/api/groups/merge", methods=["POST"])
+def merge_groups():
+    """Merge source group into target group.
+
+    Accepts JSON body: {"source_group_id": 8, "target_group_id": 7}
+    Validates: both groups exist (404), belong to same attachment (400), source != target (400).
+    Moves all annotations from source to target, deletes source group.
+    Returns updated target group with annotation_count.
+    """
+    data = request.get_json(force=True)
+
+    # Validate required fields
+    if "source_group_id" not in data or "target_group_id" not in data:
+        return jsonify({"error": "Missing required fields: source_group_id and target_group_id"}), 400
+
+    try:
+        source_id = int(data["source_group_id"])
+        target_id = int(data["target_group_id"])
+    except (ValueError, TypeError):
+        return jsonify({"error": "Invalid group IDs"}), 400
+
+    # Validate source != target
+    if source_id == target_id:
+        return jsonify({"error": "source_group_id and target_group_id must be different"}), 400
+
+    # Validate both groups exist
+    source_group = db.session.get(AnnotationGroupModel, source_id)
+    if source_group is None:
+        abort(404)
+
+    target_group = db.session.get(AnnotationGroupModel, target_id)
+    if target_group is None:
+        abort(404)
+
+    # Validate same attachment
+    if source_group.attachment_id != target_group.attachment_id:
+        return jsonify({"error": "Both groups must belong to the same attachment"}), 400
+
+    # Move all annotations from source to target
+    # Use db.session.execute for a direct UPDATE to avoid SQLAlchemy relationship issues
+    db.session.execute(
+        update(AnnotationModel)
+        .where(AnnotationModel.group_id == source_id)
+        .values(group_id=target_id)
+    )
+
+    # Expire source group so SQLAlchemy doesn't try to cascade set-null on its stale annotations
+    db.session.expire(source_group)
+
+    # Delete source group — annotations are already moved so SET NULL won't affect them
+    db.session.delete(source_group)
+    db.session.commit()
+
+    # Return updated target group
+    annotation_count = AnnotationModel.query.filter_by(group_id=target_id).count()
+    effective_quantity = target_group.quantity_override if target_group.quantity_override is not None else annotation_count
+
+    return jsonify({
+        "id": target_group.id,
+        "attachment_id": target_group.attachment_id,
+        "name": target_group.name,
+        "color": target_group.color,
+        "display_order": target_group.display_order,
+        "created_at": target_group.created_at.isoformat() if target_group.created_at else None,
+        "annotation_count": annotation_count,
+        "quantity_override": target_group.quantity_override,
+        "effective_quantity": effective_quantity,
     })
 
 
@@ -1073,6 +1268,243 @@ def _create_auto_detect_group(attachment_id: int) -> AnnotationGroupModel:
     db.session.flush()  # Get the group.id before creating annotations
 
     return group
+
+
+# --- Detection V2 API (Task 6.1) ---
+
+DETAIL_GROUP_COLORS = [
+    "#e74c3c", "#27ae60", "#2980b9", "#f39c12",
+    "#9b59b6", "#1abc9c", "#e67e22", "#34495e",
+    "#c0392b", "#16a085", "#8e44ad", "#d35400",
+]
+
+
+def _find_or_create_detail_group(
+    attachment_id: int,
+    normalized_name: str,
+    existing_groups: dict,
+    color_palette: list,
+) -> AnnotationGroupModel:
+    """Find existing group by normalized name, or create a new one.
+
+    Args:
+        attachment_id: The attachment this group belongs to.
+        normalized_name: Canonicalized detail type string.
+        existing_groups: Cache of already-loaded/created groups keyed by name.
+        color_palette: List of available hex colors.
+
+    Returns:
+        The existing or newly created AnnotationGroupModel.
+    """
+    if normalized_name in existing_groups:
+        return existing_groups[normalized_name]
+
+    # Determine which colors are already used
+    used_colors = {g.color for g in existing_groups.values()}
+
+    # Pick the first unused color from the palette
+    color = color_palette[0]  # fallback
+    for c in color_palette:
+        if c not in used_colors:
+            color = c
+            break
+
+    # Determine display_order
+    max_order = db.session.query(func.max(AnnotationGroupModel.display_order)).filter_by(
+        attachment_id=attachment_id
+    ).scalar()
+    next_order = (max_order or 0) + 1
+
+    group = AnnotationGroupModel(
+        attachment_id=attachment_id,
+        name=normalized_name,
+        color=color,
+        display_order=next_order,
+    )
+    db.session.add(group)
+    db.session.flush()  # Get group.id
+
+    existing_groups[normalized_name] = group
+    return group
+
+
+@data_bp.route("/api/detect-v2/<int:attachment_id>", methods=["POST"])
+def detect_elements_v2(attachment_id):
+    """Trigger V2 element detection with auto-grouping for an attachment.
+
+    Request body (JSON, optional):
+        page_number (int): Detect a single page (1-indexed).
+        batch (bool): Detect all pages (mutually exclusive with page_number).
+        exclusion_zones (list): List of {x, y, width, height} dicts (0.0-1.0 ratios).
+
+    If neither page_number nor batch provided, defaults to page 1.
+
+    Returns 200:
+    {
+        "annotations": [...],
+        "groups": [...],
+        "methods_used": [...],
+        "summary": {"total_types": N, "total_instances": N, "pages_processed": N}
+    }
+
+    Errors: 404 (attachment/file not found), 400 (invalid params)
+    """
+    import fitz
+
+    from analysis.detection_dispatcher import run_detection_v2
+    from analysis.name_normalizer import normalize_detail_type
+
+    # Validate attachment exists
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None or not att.file_path:
+        abort(404)
+
+    # Resolve PDF file path
+    file_path = get_attachment_full_path(att.file_path, current_app.instance_path)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    # Get total page count
+    try:
+        doc = fitz.open(file_path)
+        total_pages = len(doc)
+        doc.close()
+    except Exception:
+        abort(404)
+
+    # Parse request body
+    body = request.get_json(silent=True) or {}
+    page_number = body.get("page_number")
+    batch = body.get("batch", False)
+    exclusion_zones = body.get("exclusion_zones")
+
+    # Validate mutually exclusive params
+    if page_number is not None and batch:
+        return jsonify({"error": "Cannot specify both page_number and batch=true"}), 400
+
+    # Validate page_number if provided
+    if page_number is not None:
+        try:
+            page_number = int(page_number)
+        except (ValueError, TypeError):
+            return jsonify({"error": "page_number must be an integer"}), 400
+        if page_number < 1 or page_number > total_pages:
+            return jsonify({"error": f"page_number out of range (1-{total_pages})"}), 400
+
+    # Default to page 1 if neither specified
+    if page_number is None and not batch:
+        page_number = 1
+
+    # Determine pages to process
+    config = get_analysis_config()
+    max_pages = config.get("max_pages_per_pdf", 50)
+
+    if batch:
+        pages_to_process = list(range(1, min(total_pages, max_pages) + 1))
+    else:
+        pages_to_process = [page_number]
+
+    # Load existing groups for this attachment into a lookup dict
+    existing_group_models = AnnotationGroupModel.query.filter_by(
+        attachment_id=attachment_id
+    ).all()
+    existing_groups: dict[str, AnnotationGroupModel] = {
+        g.name: g for g in existing_group_models
+    }
+
+    # Run detection across pages
+    all_annotations = []
+    all_methods: set[str] = set()
+    warning = None
+
+    for page_num in pages_to_process:
+        try:
+            results, methods_used = run_detection_v2(
+                file_path, page_num, config, exclusion_zones
+            )
+        except Exception:
+            # Graceful degradation — if detection fails for a page, skip it
+            continue
+
+        all_methods.update(methods_used)
+
+        # Check if LLM was expected but not available
+        # (text results < threshold but "vision" not in methods)
+        llm_threshold = config.get("detection_llm_threshold", 3)
+        if len(results) < llm_threshold and "vision" not in methods_used:
+            warning = "LLM unavailable"
+
+        # Auto-group each detection result
+        for result in results:
+            normalized_name = normalize_detail_type(result.label)
+            if not normalized_name:
+                normalized_name = result.label or "Unknown"
+
+            group = _find_or_create_detail_group(
+                attachment_id, normalized_name, existing_groups, DETAIL_GROUP_COLORS
+            )
+
+            ann = AnnotationModel(
+                attachment_id=attachment_id,
+                page_number=page_num,
+                x=result.x,
+                y=result.y,
+                width=result.width,
+                height=result.height,
+                group_id=group.id,
+            )
+            db.session.add(ann)
+            all_annotations.append((ann, group))
+
+    db.session.commit()
+
+    # Build response
+    annotations_response = []
+    for ann, group in all_annotations:
+        annotations_response.append({
+            "id": ann.id,
+            "x": ann.x,
+            "y": ann.y,
+            "width": ann.width,
+            "height": ann.height,
+            "page_number": ann.page_number,
+            "group_id": ann.group_id,
+            "group_color": group.color,
+            "created_at": ann.created_at.isoformat() if ann.created_at else None,
+        })
+
+    # Build groups response (all groups that have annotations for this attachment)
+    groups_response = []
+    seen_group_ids = set()
+    for g in existing_groups.values():
+        if g.id not in seen_group_ids:
+            seen_group_ids.add(g.id)
+            annotation_count = AnnotationModel.query.filter_by(group_id=g.id).count()
+            effective_quantity = g.quantity_override if g.quantity_override is not None else annotation_count
+            groups_response.append({
+                "id": g.id,
+                "name": g.name,
+                "color": g.color,
+                "annotation_count": annotation_count,
+                "quantity_override": g.quantity_override,
+                "effective_quantity": effective_quantity,
+            })
+
+    response_data = {
+        "annotations": annotations_response,
+        "groups": groups_response,
+        "methods_used": sorted(all_methods),
+        "summary": {
+            "total_types": len(groups_response),
+            "total_instances": len(annotations_response),
+            "pages_processed": len(pages_to_process),
+        },
+    }
+
+    if warning:
+        response_data["warning"] = warning
+
+    return jsonify(response_data)
 
 
 # --- Plan Tab Listing (Task 5.1) ---

@@ -63,6 +63,17 @@ def create_app() -> Flask:
                 )
                 conn.commit()
 
+            # Migration: add quantity_override column to annotation_groups if missing
+            result3 = conn.execute(text("PRAGMA table_info(annotation_groups)"))
+            group_columns = [row[1] for row in result3]
+            if "quantity_override" not in group_columns:
+                conn.execute(
+                    text(
+                        "ALTER TABLE annotation_groups ADD COLUMN quantity_override INTEGER DEFAULT NULL"
+                    )
+                )
+                conn.commit()
+
     # Register the Data Tab blueprint
     from routes.data_routes import data_bp
 
@@ -93,7 +104,7 @@ def create_app() -> Flask:
     def index():
         return render_template(
             "index.html",
-            project_name="MVR Offer Tool",
+            project_name="MVR Tool",
         )
 
     return app

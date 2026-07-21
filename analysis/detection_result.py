@@ -20,7 +20,8 @@ class DetectionResult:
     width: float  # 0.0–1.0 ratio
     height: float  # 0.0–1.0 ratio
     label: str  # e.g. "HEA 200", "beam", "unknown"
-    detection_method: str  # "vector" or "vision"
+    detection_method: str  # "vector", "vision", or "text"
+    page_number: int = 0  # 1-indexed page where detected (0 = unset)
 
     def to_dict(self) -> dict:
         """Serialize to a plain dictionary."""
@@ -31,6 +32,7 @@ class DetectionResult:
             "height": self.height,
             "label": self.label,
             "detection_method": self.detection_method,
+            "page_number": self.page_number,
         }
 
     @classmethod
@@ -43,4 +45,5 @@ class DetectionResult:
             height=d["height"],
             label=d.get("label", "unknown"),
             detection_method=d.get("detection_method", "unknown"),
+            page_number=d.get("page_number", 0),
         )
