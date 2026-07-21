@@ -561,6 +561,7 @@ async function fetchAnnotations(attachmentId, page) {
         if (response.ok) {
             state.annotations = await response.json();
             render();
+            renderGroupsPanel();
         }
     } catch (err) {
         showError('Kunde inte hämta annoteringar.');
@@ -1380,6 +1381,85 @@ function handleWheel(e) {
         }
     }
     // Without Ctrl: normal scroll (vertical pan) is handled by browser overflow
+}
+
+// --- Trigger auto-detection ---
+
+async function triggerDetection() {
+    const btn = document.getElementById('btn-detect');
+    if (!btn) return;
+
+    const originalText = btn.innerHTML;
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:-2px;margin-right:6px;"></span>Detekterar...';
+
+    const body = {};
+    if (state.activeGroupId !== null) {
+        body.group_id = state.activeGroupId;
+    }
+
+    try {
+        const response = await fetch(`/data/api/detect/${state.attachmentId}/${state.currentPage}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+        });
+
+        if (response.ok) {
+            const data = await response.json();
+
+            // Add returned annotations to local state
+            if (data.annotations && data.annotations.length > 0) {
+                for (const ann of data.annotations) {
+                    state.annotations.push(ann);
+                }
+            }
+
+            // Refresh groups to get the new/updated group
+            await fetchGroups(state.attachmentId);
+
+            render();
+            renderGroupsPanel();
+
+            // Show success notification
+            if (data.count > 0) {
+                showInfo(`${data.count} element detekterade (metod: ${data.detection_method})`);
+            } else {
+                showInfo('Inga element hittades på denna sida.');
+            }
+        } else if (response.status === 503) {
+            showError('Vision-tjänsten är inte tillgänglig. Kontrollera att Ollama körs.');
+        } else {
+            const errData = await response.json().catch(() => null);
+            showError(errData?.error || 'Detekteringen misslyckades.');
+        }
+    } catch (err) {
+        showError('Kunde inte ansluta till servern.');
+    }
+
+    btn.innerHTML = originalText;
+    btn.disabled = false;
+}
+
+// --- Info notification ---
+
+function showInfo(msg) {
+    // Remove existing toast
+    const existing = document.querySelector('.info-toast');
+    if (existing) existing.remove();
+
+    const toast = document.createElement('div');
+    toast.className = 'info-toast';
+    toast.textContent = msg;
+    document.body.appendChild(toast);
+
+    // Auto-dismiss after 5 seconds
+    setTimeout(() => {
+        if (toast.parentNode) {
+            toast.classList.add('info-toast-fade');
+            setTimeout(() => toast.remove(), 300);
+        }
+    }, 5000);
 }
 
 // --- Trigger analysis ---

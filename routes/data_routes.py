@@ -917,6 +917,164 @@ def assign_annotation_group(annotation_id):
     })
 
 
+# --- Detection API (Task 7) ---
+
+AUTO_DETECT_COLORS = ["#e74c3c", "#27ae60", "#f39c12", "#9b59b6", "#1abc9c", "#e67e22", "#34495e", "#2980b9"]
+
+
+@data_bp.route("/api/detect/<int:attachment_id>/<int:page_number>", methods=["POST"])
+def detect_elements(attachment_id, page_number):
+    """Trigger element detection for a specific PDF page.
+
+    Optional JSON body: {"group_id": <int>}
+    If group_id omitted, creates new "Auto-detected" group.
+
+    Returns 200:
+    {
+        "annotations": [...],
+        "group": {"id": ..., "name": ..., "color": ...},
+        "detection_method": "vector" | "vision",
+        "count": <int>
+    }
+
+    Errors: 404 (attachment/file not found), 400 (page out of range), 503 (vision unavailable)
+    """
+    import fitz
+    import requests
+    from analysis.detection_dispatcher import run_detection
+
+    # Validate attachment exists
+    att = db.session.get(AttachmentModel, attachment_id)
+    if att is None or not att.file_path:
+        abort(404)
+
+    # Resolve PDF file path
+    file_path = get_attachment_full_path(att.file_path, current_app.instance_path)
+    if not os.path.isfile(file_path):
+        abort(404)
+
+    # Validate page_number is within PDF page range
+    try:
+        doc = fitz.open(file_path)
+        total_pages = len(doc)
+        doc.close()
+    except Exception:
+        abort(404)
+
+    if page_number < 1 or page_number > total_pages:
+        return jsonify({"error": f"Page number out of range (1-{total_pages})"}), 400
+
+    # Run detection
+    config = get_analysis_config()
+    try:
+        results, method = run_detection(file_path, page_number, config)
+    except requests.exceptions.ConnectionError:
+        return jsonify({"error": "Vision service unavailable"}), 503
+    except requests.exceptions.Timeout:
+        return jsonify({"error": "Vision service timeout"}), 503
+
+    # Handle group assignment
+    body = request.get_json(silent=True) or {}
+    group_id = body.get("group_id")
+
+    if group_id is not None:
+        # Validate provided group
+        group = db.session.get(AnnotationGroupModel, group_id)
+        if group is None:
+            abort(404)
+        if group.attachment_id != attachment_id:
+            return jsonify({"error": "Group does not belong to this attachment"}), 400
+    else:
+        # Create new auto-detected group
+        group = _create_auto_detect_group(attachment_id)
+
+    # Create annotations for each detection result
+    annotations = []
+    for result in results:
+        ann = AnnotationModel(
+            attachment_id=attachment_id,
+            page_number=page_number,
+            x=result.x,
+            y=result.y,
+            width=result.width,
+            height=result.height,
+            group_id=group.id,
+        )
+        db.session.add(ann)
+        annotations.append(ann)
+
+    db.session.commit()
+
+    # Build response
+    annotation_list = []
+    for ann in annotations:
+        annotation_list.append({
+            "id": ann.id,
+            "attachment_id": ann.attachment_id,
+            "page_number": ann.page_number,
+            "x": ann.x,
+            "y": ann.y,
+            "width": ann.width,
+            "height": ann.height,
+            "group_id": ann.group_id,
+            "group_color": group.color,
+            "created_at": ann.created_at.isoformat() if ann.created_at else None,
+        })
+
+    return jsonify({
+        "annotations": annotation_list,
+        "group": {"id": group.id, "name": group.name, "color": group.color},
+        "detection_method": method,
+        "count": len(annotations),
+    })
+
+
+def _create_auto_detect_group(attachment_id: int) -> AnnotationGroupModel:
+    """Create a new auto-detect group with a unique name and distinct color.
+
+    Tries "Auto-detected", then "Auto-detected 2", "Auto-detected 3", etc.
+    Picks a color not already used by existing groups for this attachment.
+    """
+    # Find existing groups for this attachment
+    existing_groups = AnnotationGroupModel.query.filter_by(
+        attachment_id=attachment_id
+    ).all()
+    existing_names = {g.name for g in existing_groups}
+    existing_colors = {g.color for g in existing_groups}
+
+    # Determine unique name
+    name = "Auto-detected"
+    if name in existing_names:
+        counter = 2
+        while f"Auto-detected {counter}" in existing_names:
+            counter += 1
+        name = f"Auto-detected {counter}"
+
+    # Pick a color not already used
+    color = AUTO_DETECT_COLORS[0]  # default fallback
+    for c in AUTO_DETECT_COLORS:
+        if c not in existing_colors:
+            color = c
+            break
+
+    # Determine display_order
+    max_order = db.session.query(func.max(AnnotationGroupModel.display_order)).filter_by(
+        attachment_id=attachment_id
+    ).scalar()
+    next_order = (max_order or 0) + 1
+
+    group = AnnotationGroupModel(
+        attachment_id=attachment_id,
+        name=name,
+        color=color,
+        display_order=next_order,
+    )
+    db.session.add(group)
+    db.session.flush()  # Get the group.id before creating annotations
+
+    return group
+
+
 # --- Plan Tab Listing (Task 5.1) ---
 
 @data_bp.route("/plan")

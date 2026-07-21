@@ -25,4 +25,12 @@ def get_analysis_config() -> dict:
         "vision_model": os.environ.get("VISION_MODEL", "llama3.2-vision"),
         "vision_base_url": os.environ.get("VISION_BASE_URL", "http://localhost:11434"),
         "vision_timeout": int(os.environ.get("VISION_TIMEOUT", "300")),
+        # Detection-specific configuration
+        "detection_vector_threshold": int(os.environ.get("DETECTION_VECTOR_THRESHOLD", "10")),
+        "detection_min_path_size": float(os.environ.get("DETECTION_MIN_PATH_SIZE", "0.01")),
+        "detection_max_element_size": float(os.environ.get("DETECTION_MAX_ELEMENT_SIZE", "0.9")),
+        "detection_group_proximity": float(os.environ.get("DETECTION_GROUP_PROXIMITY", "0.02")),
+        "detection_label_proximity": float(os.environ.get("DETECTION_LABEL_PROXIMITY", "0.05")),
+        "detection_max_results": int(os.environ.get("DETECTION_MAX_RESULTS", "50")),
+        "vision_min_box_size": float(os.environ.get("VISION_MIN_BOX_SIZE", "0.005")),
     }
