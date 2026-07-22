@@ -112,7 +112,7 @@ def run_analysis(attachment_id: int, file_path: str, config: dict) -> AnalysisRe
             if page_image is not None:
                 try:
                     from analysis.vision_client import analyze_page_with_vision
-                    vision_model = config.get("vision_model", "llama3.2-vision")
+                    vision_model = config.get("vision_model", "deepseek-ocr:latest")
                     vision_base_url = config.get("vision_base_url")
                     vision_timeout = config.get("vision_timeout", 300)
                     vision_profiles = analyze_page_with_vision(

@@ -57,7 +57,7 @@ def run_detection_v2(
         try:
             image = render_page(file_path, page_number)
             if image is not None:
-                model = config.get("vision_model", "llama3.2-vision")
+                model = config.get("vision_model", "deepseek-ocr:latest")
                 base_url = config.get("vision_base_url", "http://localhost:11434")
                 timeout = config.get("vision_timeout", 60)
                 min_box_size = config.get("vision_min_box_size", 0.005)

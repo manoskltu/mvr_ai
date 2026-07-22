@@ -1,4 +1,4 @@
-"""Vision AI client for analyzing construction drawing pages via Ollama (llama3.2-vision).
+"""Vision AI client for analyzing construction drawing pages via Ollama.
 
 Sends rendered page images to a local Ollama instance and parses the response
 for steel profile identification.
@@ -50,7 +50,7 @@ Om inga stålprofiler hittas, svara med en tom lista: []
 
 def analyze_page_with_vision(
     image: Image.Image,
-    model: str = "llama3.2-vision",
+    model: str = "deepseek-ocr:latest",
     base_url: str | None = None,
     timeout: int = 300,
 ) -> list[ProfileMatch]:
@@ -58,7 +58,7 @@ def analyze_page_with_vision(
 
     Args:
         image: PIL Image of the rendered PDF page.
-        model: Ollama model name (default: llama3.2-vision).
+        model: Ollama model name (default: deepseek-ocr:latest).
         base_url: Ollama API base URL (default: http://localhost:11434).
         timeout: Request timeout in seconds (default: 300 for local models).
 
@@ -244,7 +244,7 @@ Om inga element hittas, svara med en tom lista: []
 
 def detect_elements_vision(
     image: Image.Image,
-    model: str = "llama3.2-vision",
+    model: str = "deepseek-ocr:latest",
     base_url: str | None = None,
     timeout: int = 300,
     min_box_size: float = 0.005,
@@ -256,7 +256,7 @@ def detect_elements_vision(
 
     Args:
         image: PIL Image of the rendered PDF page.
-        model: Ollama model name (default: llama3.2-vision).
+        model: Ollama model name (default: deepseek-ocr:latest).
         base_url: Ollama API base URL (default: http://localhost:11434).
         timeout: Request timeout in seconds (default: 300 for local models).
         min_box_size: Minimum width/height ratio to keep (default: 0.005).

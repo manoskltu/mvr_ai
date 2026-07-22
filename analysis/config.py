@@ -22,7 +22,7 @@ def get_analysis_config() -> dict:
         "max_pages_per_pdf": int(os.environ.get("MAX_PAGES_PER_PDF", "50")),
         "vision_api_key": os.environ.get("VISION_API_KEY"),
         "vision_api_provider": os.environ.get("VISION_API_PROVIDER", "ollama"),
-        "vision_model": os.environ.get("VISION_MODEL", "llama3.2-vision"),
+        "vision_model": os.environ.get("VISION_MODEL", "deepseek-ocr:latest"),
         "vision_base_url": os.environ.get("VISION_BASE_URL", "http://localhost:11434"),
         "vision_timeout": int(os.environ.get("VISION_TIMEOUT", "60")),
         # Detection-specific configuration
